@@ -5,11 +5,13 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class EvidenceStore {
     private final List<EventMessage> mqEvents = Collections.synchronizedList(new ArrayList<>());
     private final List<EventMessage> webhookEvents = Collections.synchronizedList(new ArrayList<>());
+    private final List<Map<String, Object>> exportAudits = Collections.synchronizedList(new ArrayList<>());
 
     public void addMq(EventMessage event) {
         mqEvents.add(event);
@@ -25,5 +27,13 @@ public class EvidenceStore {
 
     public List<EventMessage> getWebhookEvents() {
         return new ArrayList<>(webhookEvents);
+    }
+
+    public void addExportAudit(Map<String, Object> audit) {
+        exportAudits.add(audit);
+    }
+
+    public List<Map<String, Object>> getExportAudits() {
+        return new ArrayList<>(exportAudits);
     }
 }

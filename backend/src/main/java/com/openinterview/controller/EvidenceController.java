@@ -38,6 +38,7 @@ public class EvidenceController {
         data.put("webhookEvents", evidenceStore.getWebhookEvents());
         data.put("auditLogs", auditTrailService.list());
         data.put("parseFailureAudits", workflowService.getParseFailureAudits());
+        data.put("exportAudits", evidenceStore.getExportAudits());
         return Result.success(data, TraceContext.getTraceId(), "EVIDENCE_EVENTS");
     }
 }
