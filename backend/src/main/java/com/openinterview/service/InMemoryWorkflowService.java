@@ -278,7 +278,8 @@ public class InMemoryWorkflowService {
             task.fileHash = UUID.randomUUID().toString().replace("-", "");
             task.failReason = null;
             task.retryCount = 0;
-            task.stateFlow = "1->2";
+            task.stateFlow.clear();
+            task.stateFlow.add("1->2@" + nowReadable());
             task.lastErrorCode = null;
             task.bizCode = task.taskCode;
             task.retryCount = 0;
@@ -305,22 +306,16 @@ public class InMemoryWorkflowService {
                 task.taskStatus = TASK_FAILED;
                 task.failReason = "重试次数已耗尽";
                 task.lastErrorCode = String.valueOf(ErrorCode.EXPORT_FILE_FAILED.getCode());
-                task.stateFlow = "3->3";
+                task.stateFlow.add("3->3@" + nowReadable());
                 return task;
             }
-            task.retryCount = nextRetry;
-            task.taskStatus = TASK_SUCCESS;
-            task.failReason = null;
-            task.fileHash = UUID.randomUUID().toString().replace("-", "");
-            task.lastErrorCode = null;
-            task.stateFlow = "3->1->2";
             if (task.taskStatus != TASK_FAILED) {
                 throw new ApiException(ErrorCode.PARAM_INVALID, task.bizCode, "仅失败任务允许重试");
             }
+            task.retryCount = nextRetry;
             task.taskStatus = TASK_PROCESSING;
             task.failReason = null;
             task.lastErrorCode = null;
-            task.retryCount = task.retryCount + 1;
             task.stateFlow.add("3->1@" + nowReadable());
             processExportTask(task);
             return task;
@@ -569,16 +564,8 @@ public class InMemoryWorkflowService {
         public String fileHash;
         public String failReason;
         public Integer retryCount;
-        public String stateFlow;
         public String lastErrorCode;
         public String bizCode;
-        public String fileUrl;
-        public String fileName;
-        public Long fileSize;
-        public String fileHash;
-        public String failReason;
-        public String lastErrorCode;
-        public Integer retryCount;
         public List<String> stateFlow = new ArrayList<>();
         public List<Map<String, Object>> screeningRows = new ArrayList<>();
     }
