@@ -24,6 +24,7 @@ public class EvidenceController {
         Map<String, Object> data = new HashMap<>();
         data.put("mqEvents", evidenceStore.getMqEvents());
         data.put("webhookEvents", evidenceStore.getWebhookEvents());
+        data.put("exportAudits", evidenceStore.getExportAudits());
         return Result.success(data, TraceContext.getTraceId(), "EVIDENCE_EVENTS");
     }
 }
