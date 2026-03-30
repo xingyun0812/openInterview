@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.openinterview.Regression30ApiTest
--------------------------------------------------------------------------------
-Tests run: 30, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.605 s -- in com.openinterview.Regression30ApiTest
