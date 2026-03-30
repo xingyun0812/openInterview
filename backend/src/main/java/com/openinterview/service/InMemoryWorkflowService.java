@@ -14,6 +14,10 @@ import java.util.function.Supplier;
 
 @Service
 public class InMemoryWorkflowService {
+    public static final int PARSE_PROCESSING = 1;
+    public static final int PARSE_SUCCESS = 2;
+    public static final int PARSE_FAILED = 3;
+
     public static final int SCREEN_PROCESSING = 1;
     public static final int SCREEN_SUCCESS = 2;
     public static final int SCREEN_FAILED = 3;
@@ -33,8 +37,14 @@ public class InMemoryWorkflowService {
     public static final int TASK_PROCESSING = 1;
     public static final int TASK_SUCCESS = 2;
     public static final int TASK_FAILED = 3;
+    private static final int EXPORT_MAX_RETRY = 3;
+    private static final int PARSE_MAX_ATTEMPTS = 3;
 
     private final Map<String, Object> idemCache = new ConcurrentHashMap<>();
+    private final Map<String, StoredResume> resumeStore = new ConcurrentHashMap<>();
+    private final Map<Long, ResumeParseResult> parseResultStore = new ConcurrentHashMap<>();
+    private final Map<String, ParseTask> parseTaskStore = new ConcurrentHashMap<>();
+    private final java.util.List<ParseFailureAudit> parseFailureAudits = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Map<String, ScreenResult> screenStore = new ConcurrentHashMap<>();
     private final Map<String, QuestionRecord> questionStore = new ConcurrentHashMap<>();
     private final Map<String, ExportTask> exportTaskStore = new ConcurrentHashMap<>();
@@ -53,6 +63,125 @@ public class InMemoryWorkflowService {
             screenStore.put(candidateId + ":" + jobCode, result);
             return result;
         });
+    }
+
+    public UploadResult uploadResume(Long candidateId, String originalFilename, byte[] content, String idemKey) {
+        return idempotent("resume-upload:" + idemKey, () -> {
+            String bizCode = "RESUMEUPLOAD" + nowCode();
+            String safeName = (originalFilename == null || originalFilename.isBlank()) ? "resume.pdf" : originalFilename;
+            String resumeUrl = "mock://resume/" + candidateId + "/" + UUID.randomUUID() + "-" + safeName;
+            StoredResume storedResume = new StoredResume();
+            storedResume.candidateId = candidateId;
+            storedResume.resumeUrl = resumeUrl;
+            storedResume.originalFilename = safeName;
+            storedResume.size = content.length;
+            storedResume.content = content;
+            resumeStore.put(resumeUrl, storedResume);
+
+            UploadResult result = new UploadResult();
+            result.candidateId = candidateId;
+            result.resumeUrl = resumeUrl;
+            result.bizCode = bizCode;
+            return result;
+        });
+    }
+
+    public ParseTask createOrGetParseTask(Long candidateId, String resumeUrl, String idemKey, String traceId) {
+        return idempotent("resume-parse:" + idemKey, () -> {
+            if (!resumeStore.containsKey(resumeUrl)) {
+                throw new ApiException(ErrorCode.RESUME_PARSE_FAILED, "AIPARSE_INVALID", "简历地址不存在或未上传");
+            }
+            String taskCode = "AIPARSE" + nowCode();
+            ParseTask task = new ParseTask();
+            task.taskCode = taskCode;
+            task.candidateId = candidateId;
+            task.resumeUrl = resumeUrl;
+            task.parseStatus = PARSE_PROCESSING;
+            task.retryCount = 0;
+            task.maxAttempts = PARSE_MAX_ATTEMPTS;
+            task.traceId = traceId;
+            task.bizCode = taskCode;
+            parseTaskStore.put(taskCode, task);
+
+            ResumeParseResult result = new ResumeParseResult();
+            result.candidateId = candidateId;
+            result.resumeUrl = resumeUrl;
+            result.parseStatus = PARSE_PROCESSING;
+            result.bizCode = taskCode;
+            parseResultStore.put(candidateId, result);
+            return task;
+        });
+    }
+
+    public ResumeParseResult getParseResult(Long candidateId) {
+        ResumeParseResult result = parseResultStore.get(candidateId);
+        if (result == null) {
+            throw new ApiException(ErrorCode.RESUME_PARSE_FAILED, "AIPARSE_NONE", "解析结果不存在");
+        }
+        return result;
+    }
+
+    public synchronized ParseAttemptResult executeParseAttempt(String taskCode) {
+        ParseTask task = parseTaskStore.get(taskCode);
+        if (task == null) {
+            throw new ApiException(ErrorCode.RESUME_PARSE_FAILED, "AIPARSE_NONE", "解析任务不存在");
+        }
+        task.retryCount += 1;
+        int attempt = task.retryCount;
+        ResumeParseResult result = getParseResult(task.candidateId);
+        result.parseStatus = PARSE_PROCESSING;
+
+        ParseAttemptResult attemptResult = new ParseAttemptResult();
+        attemptResult.taskCode = task.taskCode;
+        attemptResult.bizCode = task.bizCode;
+        attemptResult.candidateId = task.candidateId;
+        attemptResult.traceId = task.traceId;
+        attemptResult.currentAttempt = attempt;
+
+        if (task.resumeUrl.contains("fail")) {
+            result.parseStatus = PARSE_FAILED;
+            result.failReason = "mock parse failed at attempt " + attempt;
+            result.errorCode = String.valueOf(ErrorCode.RESUME_PARSE_FAILED.getCode());
+            result.basicInfo = null;
+            result.education = java.util.List.of();
+            result.workExperience = java.util.List.of();
+            result.skillTags = java.util.List.of();
+            attemptResult.success = false;
+            attemptResult.exhausted = attempt >= task.maxAttempts;
+            attemptResult.errorCode = result.errorCode;
+            attemptResult.failReason = result.failReason;
+            if (!attemptResult.exhausted) {
+                result.parseStatus = PARSE_PROCESSING;
+            }
+            return attemptResult;
+        }
+
+        result.parseStatus = PARSE_SUCCESS;
+        result.basicInfo = java.util.Map.of("candidateId", task.candidateId, "name", "候选人" + task.candidateId);
+        result.education = java.util.List.of(java.util.Map.of("school", "示例大学", "degree", "本科"));
+        result.workExperience = java.util.List.of(java.util.Map.of("company", "示例科技", "title", "后端工程师"));
+        result.skillTags = java.util.List.of("Java", "Spring Boot", "MySQL");
+        result.failReason = null;
+        result.errorCode = null;
+        attemptResult.success = true;
+        attemptResult.exhausted = false;
+        return attemptResult;
+    }
+
+    public void addParseFailureAudit(String traceId, String bizCode, String errorCode, String failReason, int retryCount, boolean exhausted) {
+        ParseFailureAudit audit = new ParseFailureAudit();
+        audit.traceId = traceId;
+        audit.bizCode = bizCode;
+        audit.errorCode = errorCode;
+        audit.failReason = failReason;
+        audit.retryCount = retryCount;
+        audit.exhausted = exhausted;
+        audit.occurTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        parseFailureAudits.add(audit);
+    }
+
+    public java.util.List<ParseFailureAudit> getParseFailureAudits() {
+        return java.util.List.copyOf(parseFailureAudits);
     }
 
     public ScreenResult getScreenResult(Long candidateId, String jobCode) {
@@ -138,7 +267,15 @@ public class InMemoryWorkflowService {
             task.exportType = exportType;
             task.exportContent = content;
             task.jobCode = jobCode;
-            task.taskStatus = TASK_PROCESSING;
+            task.taskStatus = TASK_SUCCESS;
+            task.fileName = "export_" + task.taskCode + ".dat";
+            task.fileUrl = "/mock/" + task.fileName;
+            task.fileSize = 1024L;
+            task.fileHash = UUID.randomUUID().toString().replace("-", "");
+            task.failReason = null;
+            task.retryCount = 0;
+            task.stateFlow = "1->2";
+            task.lastErrorCode = null;
             task.bizCode = task.taskCode;
             exportTaskStore.put(String.valueOf(task.taskId), task);
             return task;
@@ -151,6 +288,28 @@ public class InMemoryWorkflowService {
             throw new ApiException(ErrorCode.EXPORT_TASK_NOT_FOUND, "EXP_NONE", "导出任务不存在");
         }
         return task;
+    }
+
+    public ExportTask retryExportTask(Long taskId, String idemKey) {
+        return idempotent("export-retry:" + idemKey, () -> {
+            ExportTask task = getExportTask(taskId);
+            int nextRetry = task.retryCount + 1;
+            if (nextRetry >= EXPORT_MAX_RETRY) {
+                task.retryCount = nextRetry;
+                task.taskStatus = TASK_FAILED;
+                task.failReason = "重试次数已耗尽";
+                task.lastErrorCode = String.valueOf(ErrorCode.EXPORT_FILE_FAILED.getCode());
+                task.stateFlow = "3->3";
+                return task;
+            }
+            task.retryCount = nextRetry;
+            task.taskStatus = TASK_SUCCESS;
+            task.failReason = null;
+            task.fileHash = UUID.randomUUID().toString().replace("-", "");
+            task.lastErrorCode = null;
+            task.stateFlow = "3->1->2";
+            return task;
+        });
     }
 
     public void markScreenSuccess(Long candidateId, String jobCode, double matchScore, int recommendLevel) {
@@ -213,6 +372,66 @@ public class InMemoryWorkflowService {
         }
     }
 
+    public static class UploadResult {
+        public Long candidateId;
+        public String resumeUrl;
+        public String bizCode;
+    }
+
+    public static class StoredResume {
+        public Long candidateId;
+        public String resumeUrl;
+        public String originalFilename;
+        public Integer size;
+        public byte[] content;
+    }
+
+    public static class ParseTask {
+        public String taskCode;
+        public Long candidateId;
+        public String resumeUrl;
+        public Integer parseStatus;
+        public Integer retryCount;
+        public Integer maxAttempts;
+        public String traceId;
+        public String bizCode;
+    }
+
+    public static class ParseAttemptResult {
+        public String taskCode;
+        public String bizCode;
+        public Long candidateId;
+        public String traceId;
+        public Integer currentAttempt;
+        public boolean success;
+        public boolean exhausted;
+        public String errorCode;
+        public String failReason;
+    }
+
+    public static class ResumeParseResult {
+        public Long candidateId;
+        public String resumeUrl;
+        public Integer parseStatus;
+        public Map<String, Object> basicInfo;
+        public java.util.List<Map<String, Object>> education;
+        public java.util.List<Map<String, Object>> workExperience;
+        public java.util.List<String> skillTags;
+        public String failReason;
+        public String errorCode;
+        public String bizCode;
+    }
+
+    public static class ParseFailureAudit {
+        public String traceId;
+        public String bizCode;
+        public String errorCode;
+        public String failReason;
+        public Integer retryCount;
+        public Boolean exhausted;
+        public String occurTime;
+    }
+
     public static class QuestionRecord {
         public String requestCode;
         public Long interviewId;
@@ -241,6 +460,14 @@ public class InMemoryWorkflowService {
         public String exportContent;
         public String jobCode;
         public Integer taskStatus;
+        public String fileUrl;
+        public String fileName;
+        public Long fileSize;
+        public String fileHash;
+        public String failReason;
+        public Integer retryCount;
+        public String stateFlow;
+        public String lastErrorCode;
         public String bizCode;
     }
 }

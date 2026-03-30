@@ -32,7 +32,10 @@ public class EventBridgeService {
     }
 
     public EventMessage publish(String mqEventCode, String bizCode, Map<String, Object> payload) {
-        String traceId = TraceContext.getTraceId();
+        return publish(mqEventCode, bizCode, payload, TraceContext.getTraceId());
+    }
+
+    public EventMessage publish(String mqEventCode, String bizCode, Map<String, Object> payload, String traceId) {
         EventMessage mqMsg = EventMessage.of(mqEventCode, traceId, bizCode, payload);
         evidenceStore.addMq(mqMsg);
 

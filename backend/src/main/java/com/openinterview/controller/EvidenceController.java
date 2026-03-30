@@ -3,6 +3,7 @@ package com.openinterview.controller;
 import com.openinterview.common.Result;
 import com.openinterview.service.AuditTrailService;
 import com.openinterview.service.EvidenceStore;
+import com.openinterview.service.InMemoryWorkflowService;
 import com.openinterview.trace.TraceContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +17,14 @@ import java.util.Map;
 public class EvidenceController {
     private final EvidenceStore evidenceStore;
     private final AuditTrailService auditTrailService;
+    private final InMemoryWorkflowService workflowService;
+
+    public EvidenceController(EvidenceStore evidenceStore,
+                              AuditTrailService auditTrailService,
+                              InMemoryWorkflowService workflowService) {
+        this.evidenceStore = evidenceStore;
+        this.auditTrailService = auditTrailService;
+        this.workflowService = workflowService;
 
     public EvidenceController(EvidenceStore evidenceStore, AuditTrailService auditTrailService) {
         this.evidenceStore = evidenceStore;
@@ -28,6 +37,7 @@ public class EvidenceController {
         data.put("mqEvents", evidenceStore.getMqEvents());
         data.put("webhookEvents", evidenceStore.getWebhookEvents());
         data.put("auditLogs", auditTrailService.list());
+        data.put("parseFailureAudits", workflowService.getParseFailureAudits());
         return Result.success(data, TraceContext.getTraceId(), "EVIDENCE_EVENTS");
     }
 }
