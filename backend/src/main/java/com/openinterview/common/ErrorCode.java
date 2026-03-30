@@ -10,6 +10,7 @@ public enum ErrorCode {
     RESUME_SCREEN_FAILED(8002),
     AI_REVIEW_REQUIRED(8004),
     ANSWER_EVALUATE_FAILED(8005),
+    SCREEN_STATUS_ILLEGAL(8006),
     SYSTEM_ERROR(9001);
 
     private final int code;
