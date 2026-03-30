@@ -87,6 +87,7 @@ public class CandidateController {
         data.put("errorCode", result.errorCode);
         data.put("failReason", result.failReason);
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
+        this.auditTrailService = auditTrailService;
     }
 
     @PostMapping("/screen")
