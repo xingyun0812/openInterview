@@ -42,14 +42,14 @@ class Issue8AnswerEvaluateTest {
     }
 
     @Test
-    void b_blankAnswerRejectedWith4012() throws Exception {
+    void b_blankAnswerRejectedWith8005() throws Exception {
         mockMvc.perform(post("/api/v1/interview/assistant/answer/evaluate")
                         .header("X-Idempotency-Key", "issue8-b")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"interviewId\":88002,\"questionId\":99002,\"answerText\":\"   \"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(4012))
-                .andExpect(jsonPath("$.errorCode").value("4012"));
+                .andExpect(jsonPath("$.code").value(8005))
+                .andExpect(jsonPath("$.errorCode").value("8005"));
     }
 
     @Test
