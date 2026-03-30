@@ -4,6 +4,8 @@ import com.openinterview.common.Result;
 import com.openinterview.service.EventMappingService;
 import com.openinterview.service.InMemoryWorkflowService;
 import com.openinterview.trace.TraceContext;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.validation.annotation.Validated;
@@ -40,6 +42,8 @@ public class InterviewAssistantController {
         data.put("requestCode", record.requestCode);
         data.put("reviewStatus", record.reviewStatus);
         data.put("questionCount", record.questionCount);
+        data.put("inputSnapshotHash", record.inputSnapshotHash);
+        data.put("questions", record.questions);
         data.put("mqEventCode", mqEvent);
         data.put("webhookEventCode", webhookEvent);
         eventBridgeService.publish(mqEvent, record.bizCode, data);
@@ -56,6 +60,7 @@ public class InterviewAssistantController {
         data.put("requestCode", record.requestCode);
         data.put("reviewStatus", record.reviewStatus);
         data.put("reviewComment", record.reviewComment);
+        data.put("reviewTime", record.reviewTime);
         return Result.success(data, TraceContext.getTraceId(), record.bizCode);
     }
 
@@ -84,8 +89,12 @@ public class InterviewAssistantController {
         @NotBlank
         public String resumeSectionId;
         @NotNull
+        @Min(1)
+        @Max(3)
         public Integer difficultyLevel;
         @NotNull
+        @Min(1)
+        @Max(50)
         public Integer questionCount;
     }
 

@@ -227,7 +227,7 @@ class Regression30ApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requestCode\":\"" + requestCode + "\",\"reviewStatus\":3,\"reviewComment\":\"reject\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(8004));
+                .andExpect(jsonPath("$.code").value(4009));
     }
 
     @Test
