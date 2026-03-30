@@ -22,6 +22,9 @@ public class InMemoryWorkflowService {
     public static final int REVIEW_PENDING = 1;
     public static final int REVIEW_APPROVED = 2;
     public static final int REVIEW_REJECTED = 3;
+    public static final int SCREEN_REVIEW_PASS = 1;
+    public static final int SCREEN_REVIEW_PENDING = 2;
+    public static final int SCREEN_REVIEW_REJECT = 3;
 
     public static final int EXPORT_SCREENING_EXCEL = 0;
     public static final int EXPORT_INTERVIEW_EXCEL = 1;
@@ -37,14 +40,8 @@ public class InMemoryWorkflowService {
     private final Map<String, ExportTask> exportTaskStore = new ConcurrentHashMap<>();
 
     public <T> T idempotent(String key, Supplier<T> supplier) {
-        Object old = idemCache.get(key);
-        if (old != null) {
-            @SuppressWarnings("unchecked")
-            T oldValue = (T) old;
-            return oldValue;
-        }
-        T value = supplier.get();
-        idemCache.put(key, value);
+        @SuppressWarnings("unchecked")
+        T value = (T) idemCache.computeIfAbsent(key, k -> supplier.get());
         return value;
     }
 
@@ -71,6 +68,12 @@ public class InMemoryWorkflowService {
             ScreenResult result = getScreenResult(candidateId, jobCode);
             if (result.screenStatus != SCREEN_SUCCESS) {
                 throw new ApiException(ErrorCode.AI_REVIEW_REQUIRED, result.bizCode, "筛选未成功，禁止复核");
+            }
+            if (result.matchScore == null || result.recommendLevel == null) {
+                throw new ApiException(ErrorCode.AI_REVIEW_REQUIRED, result.bizCode, "筛选结果不完整，禁止复核");
+            }
+            if (!isValidScreenReviewResult(reviewResult)) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, result.bizCode, "复核结论非法，仅允许 1/2/3");
             }
             result.reviewResult = reviewResult;
             result.reviewComment = reviewComment;
@@ -152,9 +155,38 @@ public class InMemoryWorkflowService {
 
     public void markScreenSuccess(Long candidateId, String jobCode, double matchScore, int recommendLevel) {
         ScreenResult result = getScreenResult(candidateId, jobCode);
-        result.screenStatus = SCREEN_SUCCESS;
+        transitScreenStatus(result, SCREEN_SUCCESS);
         result.matchScore = BigDecimal.valueOf(matchScore);
         result.recommendLevel = recommendLevel;
+        result.reasonSummary = "AI仅输出建议，需HR复核后生效";
+    }
+
+    public void markScreenFailed(Long candidateId, String jobCode, String failReason) {
+        ScreenResult result = getScreenResult(candidateId, jobCode);
+        transitScreenStatus(result, SCREEN_FAILED);
+        result.failReason = failReason;
+    }
+
+    public void retryScreen(Long candidateId, String jobCode) {
+        ScreenResult result = getScreenResult(candidateId, jobCode);
+        transitScreenStatus(result, SCREEN_PROCESSING);
+    }
+
+    private void transitScreenStatus(ScreenResult result, int targetStatus) {
+        int current = result.screenStatus;
+        boolean allowed = (current == SCREEN_PROCESSING && (targetStatus == SCREEN_SUCCESS || targetStatus == SCREEN_FAILED || targetStatus == SCREEN_CANCELED))
+                || (current == SCREEN_FAILED && targetStatus == SCREEN_PROCESSING);
+        if (!allowed) {
+            throw new ApiException(ErrorCode.SCREEN_STATUS_ILLEGAL, result.bizCode, "screen_status 非法流转: " + current + "->" + targetStatus);
+        }
+        result.screenStatus = targetStatus;
+    }
+
+    private boolean isValidScreenReviewResult(Integer reviewResult) {
+        return reviewResult != null
+                && (reviewResult == SCREEN_REVIEW_PASS
+                || reviewResult == SCREEN_REVIEW_PENDING
+                || reviewResult == SCREEN_REVIEW_REJECT);
     }
 
     private String nowCode() {
@@ -167,9 +199,11 @@ public class InMemoryWorkflowService {
         public Integer screenStatus;
         public BigDecimal matchScore;
         public Integer recommendLevel;
+        public String reasonSummary;
         public Integer reviewResult;
         public String reviewComment;
         public String reviewTime;
+        public String failReason;
         public String bizCode;
 
         public ScreenResult(Long candidateId, String jobCode, String bizCode) {
