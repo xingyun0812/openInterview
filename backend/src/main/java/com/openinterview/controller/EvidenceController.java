@@ -25,10 +25,6 @@ public class EvidenceController {
         this.evidenceStore = evidenceStore;
         this.auditTrailService = auditTrailService;
         this.workflowService = workflowService;
-
-    public EvidenceController(EvidenceStore evidenceStore, AuditTrailService auditTrailService) {
-        this.evidenceStore = evidenceStore;
-        this.auditTrailService = auditTrailService;
     }
 
     @GetMapping("/events")
