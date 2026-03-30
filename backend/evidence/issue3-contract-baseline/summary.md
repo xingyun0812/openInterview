@@ -8,22 +8,23 @@
 
 ```bash
 # 临时容器（隔离环境）
-docker run -d --name openinterview_issue3_mysql -e MYSQL_ROOT_PASSWORD=issue3pass mysql:8.0.39
+export ISSUE3_MYSQL_ROOT_PASSWORD='<replace-with-local-secret>'
+docker run -d --name openinterview_issue3_mysql -e MYSQL_ROOT_PASSWORD="$ISSUE3_MYSQL_ROOT_PASSWORD" mysql:8.0.39
 
 # migration
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/migration/V20260327_01__init_core_tables.sql
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/migration/V20260327_02__create_ai_tables.sql
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/migration/V20260327_03__ai_screen_weight_config.sql
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/migration/V20260327_04__init_enum_dict.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/migration/V20260327_01__init_core_tables.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/migration/V20260327_02__create_ai_tables.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/migration/V20260327_03__ai_screen_weight_config.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/migration/V20260327_04__init_enum_dict.sql
 
 # 契约核验
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass -t < db/verification/V20260330_01__verify_contract_baseline.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot -t < db/verification/V20260330_01__verify_contract_baseline.sql
 
 # rollback（逆序）
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/rollback/R20260327_04__rollback_enum_dict.sql
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/rollback/R20260327_03__rollback_ai_screen_weight.sql
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/rollback/R20260327_02__rollback_ai_tables.sql
-docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/rollback/R20260327_01__rollback_core_tables.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/rollback/R20260327_04__rollback_enum_dict.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/rollback/R20260327_03__rollback_ai_screen_weight.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/rollback/R20260327_02__rollback_ai_tables.sql
+docker exec -e MYSQL_PWD="$ISSUE3_MYSQL_ROOT_PASSWORD" -i openinterview_issue3_mysql mysql -uroot < db/rollback/R20260327_01__rollback_core_tables.sql
 ```
 
 ## 2) 执行结果摘要
@@ -40,6 +41,13 @@ docker exec -i openinterview_issue3_mysql mysql -uroot -pissue3pass < db/rollbac
   - `review_status`: 3 项（1/2/3）
   - `recommend_level`: 3 项（1/2/3）
 - 回滚后抽检：关键表已清理（符合 dry-run 预期）
+
+## 2.1) 安全说明（口令处理）
+
+- 该文档中的执行命令已移除明文口令，不再使用 `-p<password>` 形式。
+- 当前推荐方式：通过 `ISSUE3_MYSQL_ROOT_PASSWORD` 与 `MYSQL_PWD` 传递本地临时口令，避免把凭据写入仓库。
+- 证据日志中的 MySQL warning 来源于早期 dry-run 命令形态（命令行带口令），不影响本次契约核验结论。
+- 后续复跑时请继续使用环境变量方案，并将口令保留在本机会话中，不落盘到版本库文件。
 
 ## 3) 明细证据文件
 
