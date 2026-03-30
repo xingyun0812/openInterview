@@ -10,6 +10,7 @@ import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,6 +31,9 @@ public class InMemoryWorkflowService {
     public static final int REVIEW_PENDING = 1;
     public static final int REVIEW_APPROVED = 2;
     public static final int REVIEW_REJECTED = 3;
+    /** 题目审核：与 DDL review_status 一致 1-待审 2-通过 3-驳回 */
+    public static final int QUESTION_REVIEW_APPROVED = 2;
+    public static final int QUESTION_REVIEW_REJECTED = 3;
     public static final int SCREEN_REVIEW_PASS = 1;
     public static final int SCREEN_REVIEW_PENDING = 2;
     public static final int SCREEN_REVIEW_REJECT = 3;
@@ -51,6 +55,8 @@ public class InMemoryWorkflowService {
     private final java.util.List<ParseFailureAudit> parseFailureAudits = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Map<String, ScreenResult> screenStore = new ConcurrentHashMap<>();
     private final Map<String, QuestionRecord> questionStore = new ConcurrentHashMap<>();
+    /** 仅用于测试/演示：标记为不存在的面试 ID，便于覆盖「面试不存在」用例 */
+    private final java.util.Set<Long> missingInterviewIds = ConcurrentHashMap.newKeySet();
     private final Map<String, ExportTask> exportTaskStore = new ConcurrentHashMap<>();
 
     public <T> T idempotent(String key, Supplier<T> supplier) {
@@ -215,17 +221,35 @@ public class InMemoryWorkflowService {
         });
     }
 
+    /**
+     * 用于测试：将 interviewId 标记为不存在，后续 generate 将返回 {@link ErrorCode#INTERVIEW_NOT_FOUND}。
+     */
+    public void markInterviewMissing(Long interviewId) {
+        if (interviewId != null) {
+            missingInterviewIds.add(interviewId);
+        }
+    }
+
     public QuestionRecord createQuestionRecord(Long interviewId, String resumeSectionId, Integer difficulty, Integer questionCount, String idemKey) {
         return idempotent("question:" + idemKey, () -> {
+            if (interviewId == null || interviewId <= 0) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, "INTA_INVALID", "interviewId 非法");
+            }
+            if (missingInterviewIds.contains(interviewId)) {
+                throw new ApiException(ErrorCode.INTERVIEW_NOT_FOUND, "INTA_NONE", "面试不存在");
+            }
             String requestCode = "INTA" + nowCode();
+            String inputSnapshotHash = sha256Snapshot(interviewId, resumeSectionId, difficulty);
             QuestionRecord record = new QuestionRecord();
             record.requestCode = requestCode;
             record.interviewId = interviewId;
             record.resumeSectionId = resumeSectionId;
             record.difficultyLevel = difficulty;
             record.questionCount = questionCount;
+            record.inputSnapshotHash = inputSnapshotHash;
             record.reviewStatus = REVIEW_PENDING;
             record.bizCode = requestCode;
+            record.questions = buildMockQuestions(interviewId, resumeSectionId, difficulty, questionCount);
             questionStore.put(requestCode, record);
             return record;
         });
@@ -238,12 +262,38 @@ public class InMemoryWorkflowService {
                 throw new ApiException(ErrorCode.PARAM_INVALID, requestCode, "题目记录不存在");
             }
             if (record.reviewStatus != REVIEW_PENDING) {
-                throw new ApiException(ErrorCode.AI_REVIEW_REQUIRED, requestCode, "题目审核状态非法流转");
+                throw new ApiException(ErrorCode.QUESTION_REVIEW_STATUS_ILLEGAL, record.bizCode, "题目审核状态非法流转");
+            }
+            if (reviewStatus == null
+                    || (reviewStatus != QUESTION_REVIEW_APPROVED && reviewStatus != QUESTION_REVIEW_REJECTED)) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, record.bizCode, "审核结论仅允许 2(通过) 或 3(驳回)");
             }
             record.reviewStatus = reviewStatus;
             record.reviewComment = reviewComment;
+            record.reviewTime = nowReadable();
             return record;
         });
+    }
+
+    /**
+     * 契约：interviewId + resumeSectionId + difficulty 的 SHA-256（不含 questionCount）。
+     */
+    private String sha256Snapshot(Long interviewId, String resumeSectionId, Integer difficulty) {
+        String raw = interviewId + "|" + resumeSectionId + "|" + difficulty;
+        return sha256(raw);
+    }
+
+    private List<Map<String, Object>> buildMockQuestions(Long interviewId, String resumeSectionId, int difficulty, int questionCount) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (int i = 1; i <= questionCount; i++) {
+            Map<String, Object> q = new LinkedHashMap<>();
+            q.put("stem", "（AI建议）请结合片段 " + resumeSectionId + " 回答第 " + i + " 题（难度 " + difficulty + "，面试 " + interviewId + "）");
+            q.put("referenceAnswer", "（AI建议，非业务终态）示例要点：分层、一致性、可观测性。");
+            q.put("rubricPoints", List.of("架构清晰", "边界与异常", "可运维性"));
+            q.put("followUps", List.of("若流量翻倍如何扩容？"));
+            list.add(q);
+        }
+        return list;
     }
 
     public AnswerEvaluateResult evaluateAnswer(Long interviewId, Long questionId, String answerText, String idemKey) {
@@ -534,10 +584,13 @@ public class InMemoryWorkflowService {
         public String requestCode;
         public Long interviewId;
         public String resumeSectionId;
+        public String inputSnapshotHash;
         public Integer difficultyLevel;
         public Integer questionCount;
+        public List<Map<String, Object>> questions;
         public Integer reviewStatus;
         public String reviewComment;
+        public String reviewTime;
         public String bizCode;
     }
 
