@@ -1,6 +1,7 @@
 package com.openinterview.controller;
 
 import com.openinterview.common.Result;
+import com.openinterview.service.AuditTrailService;
 import com.openinterview.service.EventMappingService;
 import com.openinterview.service.InMemoryWorkflowService;
 import com.openinterview.trace.TraceContext;
@@ -19,13 +20,16 @@ public class CandidateController {
     private final InMemoryWorkflowService workflowService;
     private final EventMappingService eventMappingService;
     private final com.openinterview.service.EventBridgeService eventBridgeService;
+    private final AuditTrailService auditTrailService;
 
     public CandidateController(InMemoryWorkflowService workflowService,
                                EventMappingService eventMappingService,
-                               com.openinterview.service.EventBridgeService eventBridgeService) {
+                               com.openinterview.service.EventBridgeService eventBridgeService,
+                               AuditTrailService auditTrailService) {
         this.workflowService = workflowService;
         this.eventMappingService = eventMappingService;
         this.eventBridgeService = eventBridgeService;
+        this.auditTrailService = auditTrailService;
     }
 
     @PostMapping("/screen")
@@ -33,16 +37,22 @@ public class CandidateController {
                                               @RequestHeader("X-Idempotency-Key") String idemKey) {
         InMemoryWorkflowService.ScreenResult result =
                 workflowService.createOrGetScreenResult(request.candidateId, request.jobCode, idemKey);
-        workflowService.markScreenSuccess(request.candidateId, request.jobCode, 82.5, 1);
+        if (InMemoryWorkflowService.SCREEN_PROCESSING == result.screenStatus) {
+            workflowService.markScreenSuccess(request.candidateId, request.jobCode, 82.5, 1);
+            result = workflowService.getScreenResult(request.candidateId, request.jobCode);
+        }
         String mqEvent = "candidate.resume.screen";
         String webhookEvent = eventMappingService.toWebhookEvent(mqEvent);
 
         Map<String, Object> data = new HashMap<>();
         data.put("taskCode", result.bizCode);
-        data.put("screenStatus", InMemoryWorkflowService.SCREEN_SUCCESS);
+        data.put("screenStatus", result.screenStatus);
+        data.put("reasonSummary", result.reasonSummary);
+        data.put("aiSuggestionOnly", true);
         data.put("mqEventCode", mqEvent);
         data.put("webhookEventCode", webhookEvent);
         eventBridgeService.publish(mqEvent, result.bizCode, data);
+        auditTrailService.record("candidate", "resume.screen", result.bizCode, "0", "触发简历筛选并进入人工复核闸门");
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
     }
 
@@ -56,6 +66,7 @@ public class CandidateController {
         data.put("screenStatus", result.screenStatus);
         data.put("matchScore", result.matchScore);
         data.put("recommendLevel", result.recommendLevel);
+        data.put("reasonSummary", result.reasonSummary);
         data.put("reviewResult", result.reviewResult);
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
     }
@@ -70,6 +81,7 @@ public class CandidateController {
         data.put("reviewResult", result.reviewResult);
         data.put("reviewComment", result.reviewComment);
         data.put("reviewTime", result.reviewTime);
+        auditTrailService.record("candidate", "resume.screen.review", result.bizCode, "0", "HR完成人工复核");
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
     }
 

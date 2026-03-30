@@ -42,6 +42,7 @@ public class EventBridgeService {
 
         String webhookEventCode = eventMappingService.toWebhookEvent(mqEventCode);
         EventMessage webhookMsg = EventMessage.of(webhookEventCode, traceId, bizCode, payload);
+        evidenceStore.addWebhook(webhookMsg);
 
         if (properties.isWebhookEnabled()) {
             restClient.post()
