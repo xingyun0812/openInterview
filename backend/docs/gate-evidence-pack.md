@@ -42,3 +42,9 @@ backend/evidence/
   gate5-event-mapping/
   gate6-trace-audit/
 ```
+
+## 安全基线（命令与日志）
+
+- 不在仓库文档中提交明文口令（例如 `-p<password>`、`MYSQL_ROOT_PASSWORD=xxx`）。
+- 推荐使用本地会话变量传递凭据（例如 `MYSQL_PWD`、自定义环境变量），并在命令示例中使用占位值。
+- 若历史日志包含 CLI 口令 warning，应在对应 `summary.md` 增加说明并标注已切换到环境变量方案。
