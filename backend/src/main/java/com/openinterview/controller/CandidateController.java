@@ -50,6 +50,10 @@ public class CandidateController {
         Map<String, Object> data = new HashMap<>();
         data.put("candidateId", result.candidateId);
         data.put("resumeUrl", result.resumeUrl);
+        String mqEvent = "candidate.resume.upload";
+        data.put("mqEventCode", mqEvent);
+        data.put("webhookEventCode", eventMappingService.toWebhookEvent(mqEvent));
+        eventBridgeService.publish(mqEvent, result.bizCode, data);
         auditTrailService.record("candidate", "resume.upload", result.bizCode, "0", "简历上传至对象存储(mock)");
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
     }
@@ -70,6 +74,7 @@ public class CandidateController {
         data.put("parseStatus", task.parseStatus);
         data.put("mqEventCode", mqEvent);
         data.put("webhookEventCode", webhookEvent);
+        eventBridgeService.publish(mqEvent, task.bizCode, data);
         auditTrailService.record("candidate", "resume.parse", task.bizCode, "0", "触发异步解析任务");
         return Result.success(data, traceId, task.bizCode);
     }
@@ -138,6 +143,10 @@ public class CandidateController {
         data.put("reviewResult", result.reviewResult);
         data.put("reviewComment", result.reviewComment);
         data.put("reviewTime", result.reviewTime);
+        String mqEvent = "candidate.resume.screen.review";
+        data.put("mqEventCode", mqEvent);
+        data.put("webhookEventCode", eventMappingService.toWebhookEvent(mqEvent));
+        eventBridgeService.publish(mqEvent, result.bizCode, data);
         auditTrailService.record("candidate", "resume.screen.review", result.bizCode, "0", "HR完成人工复核");
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
     }
