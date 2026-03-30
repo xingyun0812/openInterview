@@ -2,6 +2,7 @@ package com.openinterview.common;
 
 import com.openinterview.trace.TraceContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -14,9 +15,12 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Result<Void> handleApiException(ApiException ex) {
-        return Result.fail(ex.getErrorCode(), TraceContext.getTraceId(), ex.getBizCode(), ex.getMessage());
+    public ResponseEntity<Result<Void>> handleApiException(ApiException ex) {
+        HttpStatus status = ex.getErrorCode() == ErrorCode.EXPORT_TASK_NOT_FOUND
+                ? HttpStatus.NOT_FOUND
+                : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status)
+                .body(Result.fail(ex.getErrorCode(), TraceContext.getTraceId(), ex.getBizCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

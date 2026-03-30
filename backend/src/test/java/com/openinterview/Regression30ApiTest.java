@@ -340,7 +340,7 @@ class Regression30ApiTest {
     @Test
     void case25_exportTaskNotFoundFail() throws Exception {
         mockMvc.perform(get("/api/v1/export/task/999999999"))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(6001));
     }
 
@@ -405,7 +405,7 @@ class Regression30ApiTest {
     @Test
     void case30_traceBizErrorFieldsShouldExistInFailureResponse() throws Exception {
         mockMvc.perform(get("/api/v1/export/task/999999991"))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.traceId").exists())
                 .andExpect(jsonPath("$.bizCode").exists())
                 .andExpect(jsonPath("$.errorCode").exists());

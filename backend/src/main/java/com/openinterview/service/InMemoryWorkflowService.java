@@ -41,6 +41,7 @@ public class InMemoryWorkflowService {
     public static final int TASK_PROCESSING = 1;
     public static final int TASK_SUCCESS = 2;
     public static final int TASK_FAILED = 3;
+    /** 允许的最大重试次数（第 4 次重试请求将进入死信，不再处理） */
     private static final int EXPORT_MAX_RETRY = 3;
     private static final int PARSE_MAX_ATTEMPTS = 3;
 
@@ -265,24 +266,25 @@ public class InMemoryWorkflowService {
 
     public ExportTask createExportTask(int exportType, String content, String jobCode, String idemKey) {
         return idempotent("export:" + idemKey, () -> {
+            if (exportType < EXPORT_SCREENING_EXCEL || exportType > EXPORT_INTERVIEW_WORD) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_TYPE", "exportType 仅支持 0/1/2");
+            }
             ExportTask task = new ExportTask();
             task.taskId = Math.abs(UUID.randomUUID().getMostSignificantBits());
             task.taskCode = "EXP" + nowCode();
             task.exportType = exportType;
             task.exportContent = content;
             task.jobCode = jobCode;
-            task.taskStatus = TASK_SUCCESS;
-            task.fileName = "export_" + task.taskCode + ".dat";
-            task.fileUrl = "/mock/" + task.fileName;
-            task.fileSize = 1024L;
-            task.fileHash = UUID.randomUUID().toString().replace("-", "");
+            task.taskStatus = TASK_PROCESSING;
+            task.fileName = null;
+            task.fileUrl = null;
+            task.fileSize = null;
+            task.fileHash = null;
             task.failReason = null;
             task.retryCount = 0;
             task.stateFlow.clear();
-            task.stateFlow.add("1->2@" + nowReadable());
             task.lastErrorCode = null;
             task.bizCode = task.taskCode;
-            task.retryCount = 0;
             exportTaskStore.put(String.valueOf(task.taskId), task);
             processExportTask(task);
             return task;
@@ -300,17 +302,17 @@ public class InMemoryWorkflowService {
     public ExportTask retryExportTask(Long taskId, String idemKey) {
         return idempotent("export-retry:" + idemKey, () -> {
             ExportTask task = getExportTask(taskId);
+            if (task.taskStatus != TASK_FAILED) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, task.bizCode, "仅失败任务允许重试");
+            }
             int nextRetry = task.retryCount + 1;
-            if (nextRetry >= EXPORT_MAX_RETRY) {
+            if (nextRetry > EXPORT_MAX_RETRY) {
                 task.retryCount = nextRetry;
                 task.taskStatus = TASK_FAILED;
                 task.failReason = "重试次数已耗尽";
                 task.lastErrorCode = String.valueOf(ErrorCode.EXPORT_FILE_FAILED.getCode());
                 task.stateFlow.add("3->3@" + nowReadable());
                 return task;
-            }
-            if (task.taskStatus != TASK_FAILED) {
-                throw new ApiException(ErrorCode.PARAM_INVALID, task.bizCode, "仅失败任务允许重试");
             }
             task.retryCount = nextRetry;
             task.taskStatus = TASK_PROCESSING;
@@ -360,24 +362,44 @@ public class InMemoryWorkflowService {
 
     private void processExportTask(ExportTask task) {
         try {
-            if (task.exportType != EXPORT_SCREENING_EXCEL) {
-                task.fileName = task.taskCode + ".xlsx";
+            if (task.exportType == EXPORT_SCREENING_EXCEL) {
+                List<Map<String, Object>> rows = buildScreeningRows(task.exportContent, task.jobCode, task);
+                String fileContent = toCsv(rows);
+                task.screeningRows = rows;
+                task.fileName = "screening-" + task.taskCode + ".csv";
                 task.fileUrl = "/downloads/" + task.fileName;
-                task.fileSize = 0L;
-                task.fileHash = sha256(task.taskCode + "|" + task.exportType);
+                task.fileSize = (long) fileContent.getBytes(StandardCharsets.UTF_8).length;
+                task.fileHash = sha256(fileContent);
                 task.taskStatus = TASK_SUCCESS;
                 task.stateFlow.add("1->2@" + nowReadable());
                 return;
             }
-            List<Map<String, Object>> rows = buildScreeningRows(task.exportContent, task.jobCode);
-            String fileContent = toCsv(rows);
-            task.screeningRows = rows;
-            task.fileName = "screening-" + task.taskCode + ".csv";
-            task.fileUrl = "/downloads/" + task.fileName;
-            task.fileSize = (long) fileContent.getBytes(StandardCharsets.UTF_8).length;
-            task.fileHash = sha256(fileContent);
-            task.taskStatus = TASK_SUCCESS;
-            task.stateFlow.add("1->2@" + nowReadable());
+            if (task.exportType == EXPORT_INTERVIEW_EXCEL) {
+                String fileContent = buildScoreExcelContent(task.exportContent, task);
+                task.fileName = "scores-" + task.taskCode + ".xlsx";
+                task.fileUrl = "/downloads/" + task.fileName;
+                task.fileSize = (long) fileContent.getBytes(StandardCharsets.UTF_8).length;
+                task.fileHash = sha256(fileContent);
+                task.taskStatus = TASK_SUCCESS;
+                task.stateFlow.add("1->2@" + nowReadable());
+                return;
+            }
+            if (task.exportType == EXPORT_INTERVIEW_WORD) {
+                String fileContent = buildInterviewWordContent(task.exportContent, task);
+                task.fileName = "interview-" + task.taskCode + ".docx";
+                task.fileUrl = "/downloads/" + task.fileName;
+                task.fileSize = (long) fileContent.getBytes(StandardCharsets.UTF_8).length;
+                task.fileHash = sha256(fileContent);
+                task.taskStatus = TASK_SUCCESS;
+                task.stateFlow.add("1->2@" + nowReadable());
+                return;
+            }
+            throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_TYPE", "exportType 仅支持 0/1/2");
+        } catch (ApiException ex) {
+            task.taskStatus = TASK_FAILED;
+            task.failReason = ex.getMessage();
+            task.lastErrorCode = String.valueOf(ex.getErrorCode().getCode());
+            task.stateFlow.add("1->3@" + nowReadable());
         } catch (Exception ex) {
             task.taskStatus = TASK_FAILED;
             task.failReason = ex.getMessage();
@@ -386,11 +408,73 @@ public class InMemoryWorkflowService {
         }
     }
 
-    private List<Map<String, Object>> buildScreeningRows(String content, String jobCode) {
+    private String buildScoreExcelContent(String content, ExportTask task) {
+        List<Long> interviewIds = parseInterviewIds(content);
+        StringBuilder sb = new StringBuilder();
+        sb.append("interviewId,candidateName,finalScore,interviewResult,evaluatorComment\n");
+        for (Long interviewId : interviewIds) {
+            if (interviewId == 910001L && task.retryCount == 0) {
+                throw new ApiException(ErrorCode.EXPORT_FILE_FAILED, "EXP_FAIL", "成绩导出模拟失败(首次)");
+            }
+            if (interviewId == 910002L) {
+                throw new ApiException(ErrorCode.EXPORT_FILE_FAILED, "EXP_PERM", "成绩导出永久失败");
+            }
+            double score = 60.0 + (interviewId % 40);
+            sb.append(interviewId)
+                    .append(",候选人").append(interviewId)
+                    .append(",").append(String.format("%.2f", score))
+                    .append(",").append(interviewId % 3 == 0 ? "待定" : "通过")
+                    .append(",综合评价(mock)\n");
+        }
+        return sb.toString();
+    }
+
+    private String buildInterviewWordContent(String content, ExportTask task) {
+        List<Long> interviewIds = parseInterviewIds(content);
+        StringBuilder sb = new StringBuilder();
+        sb.append("【面试详情 Word 导出 MOCK】\n\n");
+        for (Long interviewId : interviewIds) {
+            if (interviewId == 920001L && task.retryCount == 0) {
+                throw new ApiException(ErrorCode.EXPORT_FILE_FAILED, "EXP_FAIL", "面试 Word 导出模拟失败(首次)");
+            }
+            if (interviewId == 920002L) {
+                throw new ApiException(ErrorCode.EXPORT_FILE_FAILED, "EXP_PERM", "面试 Word 导出永久失败");
+            }
+            sb.append("=== 面试ID: ").append(interviewId).append(" ===\n");
+            sb.append("题目1: 请设计一个高并发缓存系统\n");
+            sb.append("回答: 候选人阐述了分层缓存与一致性策略(mock)\n");
+            double rating = 75.0 + (interviewId % 25);
+            sb.append("评分: ").append(String.format("%.1f", rating)).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    private List<Long> parseInterviewIds(String content) {
+        if (content == null || content.isBlank()) {
+            throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_INVALID", "面试ID列表不能为空");
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String part : content.split(",")) {
+            String t = part.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            ids.add(Long.parseLong(t));
+        }
+        if (ids.isEmpty()) {
+            throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_INVALID", "面试ID列表不能为空");
+        }
+        return ids;
+    }
+
+    private List<Map<String, Object>> buildScreeningRows(String content, String jobCode, ExportTask task) {
         if (jobCode == null || jobCode.isBlank()) {
             throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_INVALID", "岗位编码不能为空");
         }
-        if (jobCode.startsWith("FAIL")) {
+        if ("FAIL_FIRST_RETRY_OK".equals(jobCode) && task.retryCount == 0) {
+            throw new ApiException(ErrorCode.EXPORT_FILE_FAILED, "EXP_FAIL", "首次导出失败(可重试)");
+        }
+        if (jobCode.startsWith("FAIL") && !"FAIL_FIRST_RETRY_OK".equals(jobCode)) {
             throw new ApiException(ErrorCode.EXPORT_FILE_FAILED, "EXP_FAIL", "导出模拟失败");
         }
         List<Map<String, Object>> rows = new ArrayList<>();

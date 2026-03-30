@@ -1,10 +1,15 @@
 package com.openinterview.controller;
 
+import com.openinterview.common.ApiException;
+import com.openinterview.common.ErrorCode;
 import com.openinterview.common.Result;
+import com.openinterview.service.AuditTrailService;
 import com.openinterview.service.EventMappingService;
 import com.openinterview.service.EvidenceStore;
 import com.openinterview.service.InMemoryWorkflowService;
 import com.openinterview.trace.TraceContext;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -27,15 +32,43 @@ public class ExportController {
     private final EventMappingService eventMappingService;
     private final com.openinterview.service.EventBridgeService eventBridgeService;
     private final EvidenceStore evidenceStore;
+    private final AuditTrailService auditTrailService;
 
     public ExportController(InMemoryWorkflowService workflowService,
                             EventMappingService eventMappingService,
                             com.openinterview.service.EventBridgeService eventBridgeService,
-                            EvidenceStore evidenceStore) {
+                            EvidenceStore evidenceStore,
+                            AuditTrailService auditTrailService) {
         this.workflowService = workflowService;
         this.eventMappingService = eventMappingService;
         this.eventBridgeService = eventBridgeService;
         this.evidenceStore = evidenceStore;
+        this.auditTrailService = auditTrailService;
+    }
+
+    @PostMapping("/task")
+    public Result<Map<String, Object>> unifiedExportTask(@RequestBody @Validated UnifiedExportTaskRequest request,
+                                                         @RequestHeader("X-Idempotency-Key") String idemKey) {
+        int et = request.exportType;
+        if (et == InMemoryWorkflowService.EXPORT_SCREENING_EXCEL) {
+            if (request.candidateIds == null || request.candidateIds.isEmpty()) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_INVALID", "candidateIds 不能为空");
+            }
+            if (request.jobCode == null || request.jobCode.isBlank()) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_INVALID", "jobCode 不能为空");
+            }
+            String content = request.candidateIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+            return createExport(et, content, request.jobCode, idemKey);
+        }
+        if (et == InMemoryWorkflowService.EXPORT_INTERVIEW_EXCEL
+                || et == InMemoryWorkflowService.EXPORT_INTERVIEW_WORD) {
+            if (request.interviewIds == null || request.interviewIds.isEmpty()) {
+                throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_INVALID", "interviewIds 不能为空");
+            }
+            String content = request.interviewIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+            return createExport(et, content, null, idemKey);
+        }
+        throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_TYPE", "exportType 非法");
     }
 
     @PostMapping("/screening/excel")
@@ -96,7 +129,11 @@ public class ExportController {
         data.put("retryCount", task.retryCount);
         data.put("failReason", task.failReason);
         data.put("fileHash", task.fileHash);
+        data.put("fileSize", task.fileSize);
         evidenceStore.addExportAudit(auditPayload("EXPORT_RETRY", task));
+        auditTrailService.record("export", "export.retry", task.bizCode,
+                task.taskStatus == InMemoryWorkflowService.TASK_FAILED ? task.lastErrorCode : "0",
+                "taskId=" + task.taskId + " retryCount=" + task.retryCount + " taskStatus=" + task.taskStatus);
         log.info("traceId={} bizCode={} action=export.task.retry taskId={} taskStatus={} retryCount={}",
                 TraceContext.getTraceId(), task.bizCode, task.taskId, task.taskStatus, task.retryCount);
         return Result.success(data, TraceContext.getTraceId(), task.bizCode);
@@ -116,12 +153,16 @@ public class ExportController {
         data.put("fileHash", task.fileHash);
         data.put("fileName", task.fileName);
         data.put("fileUrl", task.fileUrl);
+        data.put("fileSize", task.fileSize);
         data.put("failReason", task.failReason);
         data.put("retryCount", task.retryCount);
         data.put("mqEventCode", mqEvent);
         data.put("webhookEventCode", webhookEvent);
         eventBridgeService.publish(mqEvent, task.bizCode, data);
         evidenceStore.addExportAudit(auditPayload("EXPORT_CREATE", task));
+        auditTrailService.record("export", "export.create", task.bizCode,
+                task.taskStatus == InMemoryWorkflowService.TASK_FAILED ? task.lastErrorCode : "0",
+                "exportType=" + task.exportType + " taskId=" + task.taskId + " taskStatus=" + task.taskStatus);
         if (task.taskStatus == InMemoryWorkflowService.TASK_FAILED) {
             log.error("traceId={} bizCode={} errorCode=6003 action=export.task.create.failed taskId={} reason={}",
                     TraceContext.getTraceId(), task.bizCode, task.taskId, task.failReason);
@@ -192,6 +233,16 @@ public class ExportController {
     public static class InterviewExportRequest {
         @NotNull
         @Size(min = 1)
+        public List<Long> interviewIds;
+    }
+
+    public static class UnifiedExportTaskRequest {
+        @NotNull
+        @Min(0)
+        @Max(2)
+        public Integer exportType;
+        public List<Long> candidateIds;
+        public String jobCode;
         public List<Long> interviewIds;
     }
 }
