@@ -1,0 +1,54 @@
+name: Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag or version"
+        required: true
+        type: string
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check gate evidence files
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            "backend/evidence/gate4-regression/summary.md"
+            "backend/evidence/gate5-event-mapping/summary.md"
+            "backend/evidence/gate6-trace-audit/summary.md"
+          )
+          for f in "${required[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "Missing required evidence file: $f"
+              exit 1
+            fi
+            echo "OK: $f"
+          done
+
+      - name: Check policy files
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            "policies/merge-gate.yml"
+            "policies/release-gate.yml"
+            "docs/ai-delivery-blueprint-v1.md"
+          )
+          for f in "${required[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "Missing required policy/doc file: $f"
+              exit 1
+            fi
+            echo "OK: $f"
+          done
+
+      - name: Summary
+        run: |
+          echo "Release Gate passed for ${{ inputs.release_tag }}"

@@ -1,0 +1,27 @@
+version: 1
+name: merge-gate
+
+scope:
+  branches:
+    - main
+
+required_checks:
+  - PR Gate / changed-files-sanity
+  - PR Gate / backend-test
+
+rules:
+  - id: no-build-artifacts
+    description: PR must not include backend build artifacts
+    deny_paths:
+      - "backend/target/**"
+
+  - id: test-required-for-backend-change
+    description: Backend change requires successful mvn test
+    when_changed:
+      - "backend/**"
+    require_check: "PR Gate / backend-test"
+
+  - id: obsidian-ignore
+    description: .obsidian changes are non-blocking by default
+    allow_paths:
+      - ".obsidian/**"

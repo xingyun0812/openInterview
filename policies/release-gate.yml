@@ -1,0 +1,23 @@
+version: 1
+name: release-gate
+
+required_evidence:
+  - path: "backend/evidence/gate4-regression/summary.md"
+    meaning: "Gate 4 - 契约回归 100% 通过"
+  - path: "backend/evidence/gate5-event-mapping/summary.md"
+    meaning: "Gate 5 - 事件映射联调通过"
+  - path: "backend/evidence/gate6-trace-audit/summary.md"
+    meaning: "Gate 6 - trace/biz/error 抽检通过"
+
+required_docs:
+  - "policies/merge-gate.yml"
+  - "policies/release-gate.yml"
+  - "docs/ai-delivery-blueprint-v1.md"
+
+manual_approval:
+  required: true
+  approver_role: "tech-lead-or-release-owner"
+
+notes:
+  - "v1 阶段保持人工触发 release gate。"
+  - "高风险上线仍需灰度和回滚演练记录。"
