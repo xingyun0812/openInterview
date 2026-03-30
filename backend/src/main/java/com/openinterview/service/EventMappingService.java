@@ -10,7 +10,7 @@ public class EventMappingService {
             "candidate.resume.parse", "candidate.resume.parsed",
             "candidate.resume.screen", "candidate.resume.screened",
             "interview.assistant.question.generate", "interview.question.generated",
-            "interview.assistant.answer.evaluate", "interview.answer.evaluated",
+            "interview.answer.evaluate", "interview.answer.evaluated",
             "export.generate", "export.generated"
     );
 

@@ -59,6 +59,8 @@ public class InMemoryWorkflowService {
     /** 仅用于测试/演示：标记为不存在的面试 ID，便于覆盖「面试不存在」用例 */
     private final java.util.Set<Long> missingInterviewIds = ConcurrentHashMap.newKeySet();
     private final Map<String, ExportTask> exportTaskStore = new ConcurrentHashMap<>();
+    /** 对应 interview_answer_assess_record，后续可换 DB */
+    private final Map<String, AnswerAssessRecord> answerAssessStore = new ConcurrentHashMap<>();
 
     public <T> T idempotent(String key, Supplier<T> supplier) {
         @SuppressWarnings("unchecked")
@@ -310,8 +312,24 @@ public class InMemoryWorkflowService {
             result.coverageScore = new BigDecimal("78.00");
             result.clarityScore = new BigDecimal("80.00");
             result.followUpSuggest = "请补充系统设计中的容量评估与降级方案。";
+
+            AnswerAssessRecord stored = new AnswerAssessRecord();
+            stored.recordCode = result.bizCode;
+            stored.interviewId = interviewId;
+            stored.questionId = questionId;
+            stored.answerText = answerText;
+            stored.accuracyScore = result.accuracyScore;
+            stored.coverageScore = result.coverageScore;
+            stored.clarityScore = result.clarityScore;
+            stored.followUpSuggest = result.followUpSuggest;
+            stored.createTime = nowReadable();
+            answerAssessStore.put(result.bizCode, stored);
             return result;
         });
+    }
+
+    public java.util.List<AnswerAssessRecord> getAnswerAssessRecords() {
+        return java.util.List.copyOf(answerAssessStore.values());
     }
 
     public ExportTask createExportTask(int exportType, String content, String jobCode, String idemKey) {
@@ -686,6 +704,19 @@ public class InMemoryWorkflowService {
         public BigDecimal coverageScore;
         public BigDecimal clarityScore;
         public String followUpSuggest;
+    }
+
+    /** 与 interview_answer_assess_record 对齐的内存持久化模型 */
+    public static class AnswerAssessRecord {
+        public String recordCode;
+        public Long interviewId;
+        public Long questionId;
+        public String answerText;
+        public BigDecimal accuracyScore;
+        public BigDecimal coverageScore;
+        public BigDecimal clarityScore;
+        public String followUpSuggest;
+        public String createTime;
     }
 
     public static class ExportTask {
