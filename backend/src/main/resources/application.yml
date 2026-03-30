@@ -20,3 +20,8 @@ event:
 logging:
   level:
     root: INFO
+
+resume:
+  parse:
+    retry:
+      backoff-ms: 200,500,1000
