@@ -1,6 +1,7 @@
 package com.openinterview.controller;
 
 import com.openinterview.common.Result;
+import com.openinterview.service.AuditTrailService;
 import com.openinterview.service.EventMappingService;
 import com.openinterview.service.InMemoryWorkflowService;
 import com.openinterview.trace.TraceContext;
@@ -19,13 +20,16 @@ public class InterviewAssistantController {
     private final InMemoryWorkflowService workflowService;
     private final EventMappingService eventMappingService;
     private final com.openinterview.service.EventBridgeService eventBridgeService;
+    private final AuditTrailService auditTrailService;
 
     public InterviewAssistantController(InMemoryWorkflowService workflowService,
                                         EventMappingService eventMappingService,
-                                        com.openinterview.service.EventBridgeService eventBridgeService) {
+                                        com.openinterview.service.EventBridgeService eventBridgeService,
+                                        AuditTrailService auditTrailService) {
         this.workflowService = workflowService;
         this.eventMappingService = eventMappingService;
         this.eventBridgeService = eventBridgeService;
+        this.auditTrailService = auditTrailService;
     }
 
     @PostMapping("/question/generate")
@@ -65,16 +69,19 @@ public class InterviewAssistantController {
         InMemoryWorkflowService.AnswerEvaluateResult result = workflowService.evaluateAnswer(
                 request.interviewId, request.questionId, request.answerText, idemKey
         );
-        String mqEvent = "interview.assistant.answer.evaluate";
+        String mqEvent = "interview.answer.evaluate";
         String webhookEvent = eventMappingService.toWebhookEvent(mqEvent);
         Map<String, Object> data = new HashMap<>();
         data.put("accuracyScore", result.accuracyScore);
         data.put("coverageScore", result.coverageScore);
         data.put("clarityScore", result.clarityScore);
         data.put("followUpSuggest", result.followUpSuggest);
+        data.put("aiSuggestionOnly", true);
         data.put("mqEventCode", mqEvent);
         data.put("webhookEventCode", webhookEvent);
         eventBridgeService.publish(mqEvent, result.bizCode, data);
+        auditTrailService.record("interview", "assistant.answer.evaluate", result.bizCode, "0",
+                "AI回答评估(建议，非面试终态)");
         return Result.success(data, TraceContext.getTraceId(), result.bizCode);
     }
 
@@ -103,7 +110,8 @@ public class InterviewAssistantController {
         public Long interviewId;
         @NotNull
         public Long questionId;
-        @NotBlank
+        /** 允许空串由服务层返回 ANSWER_EVALUATE_FAILED，与 Bean 校验区分 */
+        @NotNull
         public String answerText;
     }
 }
