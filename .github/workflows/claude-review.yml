@@ -1,0 +1,43 @@
+name: claude-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  claude-code-review:
+    name: claude-code-review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Option A (recommended): install Claude GitHub App via Claude Code /install-github-app
+      # Option B: use ANTHROPIC_API_KEY secret (fallback)
+      - name: Claude Code Action PR review
+        uses: anthropics/claude-code-action@v1
+        with:
+          mode: pr_review
+          github_token: ${{ github.token }}
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            你是资深代码审查员。请基于本 PR 变更做审查，输出：
+            - Summary（1-3条）
+            - Must fix（阻塞项）
+            - Should fix（非阻塞）
+            - Risks
+            - Test plan
+
+            重点关注：
+            1) 幂等头 X-Idempotency-Key 是否覆盖所有写接口
+            2) 状态机非法流转是否拒绝并留痕
+            3) traceId + bizCode + errorCode 是否全链路透传
+            4) MQ/Webhook 事件命名映射是否一致（契约基线）
+            5) 是否补齐测试证据（mvn test / 回归 / 证据包）
+
