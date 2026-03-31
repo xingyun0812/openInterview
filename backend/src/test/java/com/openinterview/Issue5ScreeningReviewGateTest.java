@@ -117,13 +117,29 @@ class Issue5ScreeningReviewGateTest {
                         .content("{\"candidateId\":30006,\"jobCode\":\"JAVA_ADV_01\",\"reviewResult\":1,\"reviewComment\":\"pass\"}"))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/api/v1/internal/evidence/events"))
+        MvcResult res = mockMvc.perform(get("/api/v1/internal/evidence/events"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.auditLogs").isArray())
-                .andExpect(jsonPath("$.data.auditLogs[0].module").value("candidate"))
-                .andExpect(jsonPath("$.data.auditLogs[0].traceId").exists())
-                .andExpect(jsonPath("$.data.auditLogs[0].bizCode").exists())
-                .andExpect(jsonPath("$.data.auditLogs[0].errorCode").exists());
+                .andReturn();
+
+        String body = res.getResponse().getContentAsString();
+        com.fasterxml.jackson.databind.JsonNode data = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(body)
+                .path("data")
+                .path("auditLogs");
+        Assertions.assertTrue(data.isArray(), "auditLogs should be array");
+
+        boolean found = false;
+        for (com.fasterxml.jackson.databind.JsonNode n : data) {
+            if ("candidate".equals(n.path("module").asText())) {
+                Assertions.assertFalse(n.path("traceId").asText().isBlank(), "traceId required");
+                Assertions.assertFalse(n.path("bizCode").asText().isBlank(), "bizCode required");
+                Assertions.assertTrue(n.has("errorCode"), "errorCode required");
+                found = true;
+                break;
+            }
+        }
+        Assertions.assertTrue(found, "should contain audit log for module=candidate");
     }
 
     private String extract(String body, String left, String right) {
