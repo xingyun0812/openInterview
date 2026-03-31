@@ -11,6 +11,11 @@ spring:
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DB:0}
       timeout: ${REDIS_TIMEOUT:2s}
+  autoconfigure:
+    # Spring AI OpenAI starter 会在无 key 时直接 fail-fast，默认我们必须可离线运行，所以先禁用其自动装配。
+    # 当后续要启用真实 OpenAI 调用时，应改为“按 ai.provider=openai 且 key 存在时再显式装配所需 Bean”。
+    exclude:
+      - org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
   rabbitmq:
     host: localhost
     port: 5672
@@ -64,3 +69,10 @@ resume:
 # Phase2-07 真实导出本地暂存目录（相对运行目录，一般为 backend/）
 export:
   storage-dir: exports
+
+# Phase2-09 AI 适配层（默认 mock，确保无外部依赖）
+ai:
+  enabled: true
+  provider: mock
+  openai:
+    api-key: ${OPENAI_API_KEY:}
