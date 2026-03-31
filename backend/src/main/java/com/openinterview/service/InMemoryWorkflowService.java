@@ -413,6 +413,9 @@ public class InMemoryWorkflowService {
 
     private void transitScreenStatus(ScreenResult result, int targetStatus) {
         int current = result.screenStatus;
+        if (current == targetStatus) {
+            return;
+        }
         boolean allowed = (current == SCREEN_PROCESSING && (targetStatus == SCREEN_SUCCESS || targetStatus == SCREEN_FAILED || targetStatus == SCREEN_CANCELED))
                 || (current == SCREEN_FAILED && targetStatus == SCREEN_PROCESSING);
         if (!allowed) {
