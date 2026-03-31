@@ -189,13 +189,31 @@ class Issue4ResumeParseLoopTest {
                     .andExpect(status().isOk())
                     .andReturn();
             String body = result.getResponse().getContentAsString();
-            String statusText = extract(body, "\"parseStatus\":", ",");
+            String statusText = extractParseStatusValue(body);
             if (String.valueOf(expectedStatus).equals(statusText)) {
                 return;
             }
             Thread.sleep(100L);
         }
         Assertions.fail("parse status not reached: " + expectedStatus);
+    }
+
+    /** 解析 JSON 中 data 区域的 parseStatus 数字（避免字段顺序导致其后为 } 而非 , 时截取失败） */
+    private String extractParseStatusValue(String body) {
+        String key = "\"parseStatus\":";
+        int start = body.indexOf(key);
+        if (start < 0) {
+            return "";
+        }
+        int i = start + key.length();
+        while (i < body.length() && Character.isWhitespace(body.charAt(i))) {
+            i++;
+        }
+        int j = i;
+        while (j < body.length() && Character.isDigit(body.charAt(j))) {
+            j++;
+        }
+        return body.substring(i, j);
     }
 
     private String extract(String body, String left, String right) {
