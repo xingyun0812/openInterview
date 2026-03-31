@@ -29,6 +29,17 @@ public class AuditTrailService {
         return new ArrayList<>(records);
     }
 
+    /** 追加一条审计（用于抽检单测构造缺失字段样本）。 */
+    public void append(AuditRecord record) {
+        if (record != null) {
+            records.add(record);
+        }
+    }
+
+    public void clear() {
+        records.clear();
+    }
+
     public static class AuditRecord {
         public String module;
         public String action;

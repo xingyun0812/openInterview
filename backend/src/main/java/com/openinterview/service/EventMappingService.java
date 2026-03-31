@@ -2,8 +2,10 @@ package com.openinterview.service;
 
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * MQ 内部命令语义 → Webhook 外部事实语义（与契约基线 / 详细设计 6.5 及 Slice-08 验收表一致）。
@@ -25,14 +27,19 @@ public class EventMappingService {
         MAPPING.put("export.task.failed", "EXPORT_TASK_FAILED");
     }
 
-    /**
-     * 未映射的 MQ 事件：降级为原样透传（便于观测与兼容旧路由键）。
-     */
     public String toWebhookEvent(String mqEvent) {
         return MAPPING.getOrDefault(mqEvent, mqEvent);
     }
 
     public boolean isMapped(String mqEvent) {
         return MAPPING.containsKey(mqEvent);
+    }
+
+    public Set<String> expectedMqEventCodes() {
+        return Collections.unmodifiableSet(MAPPING.keySet());
+    }
+
+    public Map<String, String> mappingTable() {
+        return Collections.unmodifiableMap(MAPPING);
     }
 }

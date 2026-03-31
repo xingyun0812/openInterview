@@ -1,0 +1,13 @@
+# 发布门禁策略（与仓库根目录 policies/release-gate.yml 保持一致）
+version: 1
+gate4:
+  regression:
+    max_failures: 0
+gate5:
+  event_mapping:
+    min_coverage_ratio: 1.0
+gate6:
+  trace_audit:
+    min_trace_hit_rate: 1.0
+    min_biz_code_hit_rate: 1.0
+    min_error_code_hit_rate: 1.0

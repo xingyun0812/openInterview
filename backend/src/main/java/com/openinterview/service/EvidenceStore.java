@@ -13,6 +13,7 @@ public class EvidenceStore {
     private final List<EventMessage> webhookEvents = Collections.synchronizedList(new ArrayList<>());
     private final List<Map<String, Object>> exportAudits = Collections.synchronizedList(new ArrayList<>());
     private final List<Map<String, Object>> webhookDeliveryFailures = Collections.synchronizedList(new ArrayList<>());
+    private volatile RegressionSnapshot regressionSnapshot;
 
     public void addMq(EventMessage event) {
         mqEvents.add(event);
@@ -38,9 +39,6 @@ public class EvidenceStore {
         return new ArrayList<>(exportAudits);
     }
 
-    /**
-     * Webhook 回调在重试后仍失败时记录，便于按 traceId / bizCode 追溯。
-     */
     public void addWebhookDeliveryFailure(String traceId,
                                           String bizCode,
                                           String errorCode,
@@ -60,5 +58,37 @@ public class EvidenceStore {
 
     public List<Map<String, Object>> getWebhookDeliveryFailures() {
         return new ArrayList<>(webhookDeliveryFailures);
+    }
+
+    public void setRegressionSnapshot(int totalTests, int failureCount, List<String> failureNames) {
+        RegressionSnapshot snap = new RegressionSnapshot();
+        snap.totalTests = totalTests;
+        snap.failureCount = failureCount;
+        snap.failureNames = failureNames == null ? List.of() : List.copyOf(failureNames);
+        this.regressionSnapshot = snap;
+    }
+
+    public RegressionSnapshot getRegressionSnapshot() {
+        return regressionSnapshot;
+    }
+
+    public void clearRegressionSnapshot() {
+        this.regressionSnapshot = null;
+    }
+
+    public void clearAll() {
+        synchronized (mqEvents) {
+            mqEvents.clear();
+            webhookEvents.clear();
+            exportAudits.clear();
+            webhookDeliveryFailures.clear();
+        }
+        regressionSnapshot = null;
+    }
+
+    public static class RegressionSnapshot {
+        public int totalTests;
+        public int failureCount;
+        public List<String> failureNames = List.of();
     }
 }
