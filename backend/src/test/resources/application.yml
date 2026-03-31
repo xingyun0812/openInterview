@@ -1,0 +1,17 @@
+# 覆盖主配置中的 MySQL，使全部集成测试使用内存 H2（无需本机 MySQL）
+# 显式带上 resume 解析退避，避免仅加载本文件时退回到代码默认值 2000,5000,10000 导致用例超时
+resume:
+  parse:
+    retry:
+      backoff-ms: 200,500,1000
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-h2.sql
