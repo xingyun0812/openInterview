@@ -40,3 +40,7 @@ resume:
   parse:
     retry:
       backoff-ms: 200,500,1000
+
+# Phase2-07 真实导出本地暂存目录（相对运行目录，一般为 backend/）
+export:
+  storage-dir: exports
