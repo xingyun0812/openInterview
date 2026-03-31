@@ -1,0 +1,33 @@
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+}
+
+.page {
+  padding: 16px;
+}
+
+.page-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--el-text-color-secondary);
+}
+
