@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -50,7 +51,7 @@ public class InMemoryWorkflowService {
     private static final int EXPORT_MAX_RETRY = 3;
     private static final int PARSE_MAX_ATTEMPTS = 3;
 
-    private final Map<String, Object> idemCache = new ConcurrentHashMap<>();
+    private final IdempotencyService idempotencyService;
     private final Map<String, StoredResume> resumeStore = new ConcurrentHashMap<>();
     private final Map<Long, ResumeParseResult> parseResultStore = new ConcurrentHashMap<>();
     private final Map<String, ParseTask> parseTaskStore = new ConcurrentHashMap<>();
@@ -65,18 +66,17 @@ public class InMemoryWorkflowService {
 
     private final AiAdapter aiAdapter;
 
-    public InMemoryWorkflowService(AiAdapter aiAdapter) {
+    public InMemoryWorkflowService(IdempotencyService idempotencyService, AiAdapter aiAdapter) {
+        this.idempotencyService = idempotencyService;
         this.aiAdapter = aiAdapter;
     }
 
-    public <T> T idempotent(String key, Supplier<T> supplier) {
-        @SuppressWarnings("unchecked")
-        T value = (T) idemCache.computeIfAbsent(key, k -> supplier.get());
-        return value;
+    public <T> T idempotent(String key, Duration ttl, Class<T> type, Supplier<T> supplier) {
+        return idempotencyService.getOrCompute(key, ttl, type, supplier);
     }
 
     public ScreenResult createOrGetScreenResult(Long candidateId, String jobCode, String idemKey) {
-        return idempotent("screen:" + idemKey, () -> {
+        return idempotent("screen:" + idemKey, Duration.ofMinutes(5), ScreenResult.class, () -> {
             String bizCode = "AISCREEN" + nowCode();
             ScreenResult result = new ScreenResult(candidateId, jobCode, bizCode);
             result.screenStatus = SCREEN_PROCESSING;
@@ -86,7 +86,7 @@ public class InMemoryWorkflowService {
     }
 
     public UploadResult uploadResume(Long candidateId, String originalFilename, byte[] content, String idemKey) {
-        return idempotent("resume-upload:" + idemKey, () -> {
+        return idempotent("resume-upload:" + idemKey, Duration.ofMinutes(5), UploadResult.class, () -> {
             String bizCode = "RESUMEUPLOAD" + nowCode();
             String safeName = (originalFilename == null || originalFilename.isBlank()) ? "resume.pdf" : originalFilename;
             String resumeUrl = "mock://resume/" + candidateId + "/" + UUID.randomUUID() + "-" + safeName;
@@ -107,7 +107,7 @@ public class InMemoryWorkflowService {
     }
 
     public ParseTask createOrGetParseTask(Long candidateId, String resumeUrl, String idemKey, String traceId) {
-        return idempotent("resume-parse:" + idemKey, () -> {
+        return idempotent("resume-parse:" + idemKey, Duration.ofMinutes(5), ParseTask.class, () -> {
             if (!resumeStore.containsKey(resumeUrl)) {
                 throw new ApiException(ErrorCode.RESUME_PARSE_FAILED, "AIPARSE_INVALID", "简历地址不存在或未上传");
             }
@@ -216,7 +216,7 @@ public class InMemoryWorkflowService {
     }
 
     public ScreenResult reviewScreenResult(Long candidateId, String jobCode, Integer reviewResult, String reviewComment, String idemKey) {
-        return idempotent("screen-review:" + idemKey, () -> {
+        return idempotent("screen-review:" + idemKey, Duration.ofMinutes(5), ScreenResult.class, () -> {
             ScreenResult result = getScreenResult(candidateId, jobCode);
             if (result.screenStatus != SCREEN_SUCCESS) {
                 throw new ApiException(ErrorCode.AI_REVIEW_REQUIRED, result.bizCode, "筛选未成功，禁止复核");
@@ -244,7 +244,7 @@ public class InMemoryWorkflowService {
     }
 
     public QuestionRecord createQuestionRecord(Long interviewId, String resumeSectionId, Integer difficulty, Integer questionCount, String idemKey) {
-        return idempotent("question:" + idemKey, () -> {
+        return idempotent("question:" + idemKey, Duration.ofMinutes(5), QuestionRecord.class, () -> {
             if (interviewId == null || interviewId <= 0) {
                 throw new ApiException(ErrorCode.PARAM_INVALID, "INTA_INVALID", "interviewId 非法");
             }
@@ -269,7 +269,7 @@ public class InMemoryWorkflowService {
     }
 
     public QuestionRecord reviewQuestion(String requestCode, Integer reviewStatus, String reviewComment, String idemKey) {
-        return idempotent("question-review:" + idemKey, () -> {
+        return idempotent("question-review:" + idemKey, Duration.ofMinutes(5), QuestionRecord.class, () -> {
             QuestionRecord record = questionStore.get(requestCode);
             if (record == null) {
                 throw new ApiException(ErrorCode.PARAM_INVALID, requestCode, "题目记录不存在");
@@ -310,7 +310,7 @@ public class InMemoryWorkflowService {
     }
 
     public AnswerEvaluateResult evaluateAnswer(Long interviewId, Long questionId, String answerText, String idemKey) {
-        return idempotent("answer-eval:" + idemKey, () -> {
+        return idempotent("answer-eval:" + idemKey, Duration.ofMinutes(5), AnswerEvaluateResult.class, () -> {
             if (answerText == null || answerText.isBlank()) {
                 throw new ApiException(ErrorCode.ANSWER_EVALUATE_FAILED, "ANSWER_EVAL", "回答内容为空");
             }
@@ -344,7 +344,7 @@ public class InMemoryWorkflowService {
     }
 
     public ExportTask createExportTask(int exportType, String content, String jobCode, String idemKey) {
-        return idempotent("export:" + idemKey, () -> {
+        return idempotent("export:" + idemKey, Duration.ofMinutes(5), ExportTask.class, () -> {
             if (exportType < EXPORT_SCREENING_EXCEL || exportType > EXPORT_INTERVIEW_WORD) {
                 throw new ApiException(ErrorCode.PARAM_INVALID, "EXP_TYPE", "exportType 仅支持 0/1/2");
             }
@@ -379,7 +379,7 @@ public class InMemoryWorkflowService {
     }
 
     public ExportTask retryExportTask(Long taskId, String idemKey) {
-        return idempotent("export-retry:" + idemKey, () -> {
+        return idempotent("export-retry:" + idemKey, Duration.ofMinutes(5), ExportTask.class, () -> {
             ExportTask task = getExportTask(taskId);
             if (task.taskStatus != TASK_FAILED) {
                 throw new ApiException(ErrorCode.PARAM_INVALID, task.bizCode, "仅失败任务允许重试");
@@ -628,6 +628,9 @@ public class InMemoryWorkflowService {
         public String reviewTime;
         public String failReason;
         public String bizCode;
+
+        public ScreenResult() {
+        }
 
         public ScreenResult(Long candidateId, String jobCode, String bizCode) {
             this.candidateId = candidateId;

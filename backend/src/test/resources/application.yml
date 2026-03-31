@@ -1,6 +1,6 @@
-# 覆盖主配置中的 MySQL，使全部集成测试使用内存 H2（无需本机 MySQL）
-# 显式带上 resume 解析退避，避免仅加载本文件时退回到代码默认值 2000,5000,10000 导致用例超时
 openinterview:
+  redis:
+    enabled: false
   security:
     permit-all: true
 

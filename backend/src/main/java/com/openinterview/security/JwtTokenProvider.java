@@ -80,6 +80,10 @@ public class JwtTokenProvider {
         return r != null ? r.toString() : null;
     }
 
+    public Date getExpirationFromToken(String token) {
+        return parseClaims(token).getExpiration();
+    }
+
     private Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(secretKey())
