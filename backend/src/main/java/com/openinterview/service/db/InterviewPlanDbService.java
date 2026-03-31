@@ -1,6 +1,8 @@
 package com.openinterview.service.db;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.openinterview.entity.InterviewPlanEntity;
 import com.openinterview.mapper.InterviewPlanMapper;
 import org.springframework.stereotype.Service;
@@ -35,5 +37,15 @@ public class InterviewPlanDbService {
     public InterviewPlanEntity getByInterviewCode(String interviewCode) {
         return interviewPlanMapper.selectOne(
                 new QueryWrapper<InterviewPlanEntity>().eq("interview_code", interviewCode).last("LIMIT 1"));
+    }
+
+    public IPage<InterviewPlanEntity> page(long current, long size, Integer interviewStatus) {
+        Page<InterviewPlanEntity> p = new Page<>(current, size);
+        QueryWrapper<InterviewPlanEntity> w = new QueryWrapper<>();
+        if (interviewStatus != null) {
+            w.eq("interview_status", interviewStatus);
+        }
+        w.orderByDesc("id");
+        return interviewPlanMapper.selectPage(p, w);
     }
 }
