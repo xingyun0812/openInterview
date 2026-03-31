@@ -1,0 +1,115 @@
+name: ai-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deepseek-review:
+    name: deepseek
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build diff
+        id: diff
+        run: |
+          git diff --no-color origin/${{ github.base_ref }}...HEAD > pr.diff || true
+          echo "diff_path=pr.diff" >> "$GITHUB_OUTPUT"
+
+      - name: DeepSeek review (OpenAI compatible)
+        id: review
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "Missing DEEPSEEK_API_KEY secret" >&2
+            exit 1
+          fi
+
+          BASE_URL="${DEEPSEEK_BASE_URL:-https://api.deepseek.com}"
+          DIFF="$(cat pr.diff | head -c 180000)"
+
+          PROMPT=$(cat <<'EOF'
+你是资深代码审查员。请基于给定的 PR diff 做审查，输出必须遵循以下格式：
+
+Verdict: APPROVE | REQUEST_CHANGES
+
+## Summary
+- 1-3条
+
+## Must fix (blockers)
+- 若无写“None”
+
+## Should fix (non-blockers)
+- 若无写“None”
+
+## Risks
+- 若无写“None”
+
+## Test plan
+- 建议如何验证
+
+要求：
+1) 关注：幂等头、状态机、traceId/bizCode/errorCode 透传、事件映射一致性、测试证据。
+2) 不要编造不存在的文件或结果。
+EOF
+)
+
+          REQ=$(jq -n --arg model "deepseek-chat" --arg prompt "$PROMPT" --arg diff "$DIFF" '{
+            model: $model,
+            messages: [
+              {role:"system", content:"You are a careful code reviewer."},
+              {role:"user", content: ($prompt + "\n\n---\nPR DIFF:\n" + $diff)}
+            ],
+            temperature: 0.1
+          }')
+
+          RESP=$(curl -sS "$BASE_URL/v1/chat/completions" \
+            -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$REQ")
+
+          TEXT=$(echo "$RESP" | jq -r '.choices[0].message.content // empty')
+          if [ -z "$TEXT" ]; then
+            echo "DeepSeek response missing content" >&2
+            echo "$RESP" >&2
+            exit 1
+          fi
+
+          echo "$TEXT" > review.md
+          echo "review_md=review.md" >> "$GITHUB_OUTPUT"
+
+          if echo "$TEXT" | grep -q "Verdict: REQUEST_CHANGES"; then
+            echo "verdict=REQUEST_CHANGES" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post review comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY=$(cat review.md | sed 's/\r$//')
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review
+          path: review.md
+
+      - name: Fail if requested changes
+        if: steps.review.outputs.verdict == 'REQUEST_CHANGES'
+        run: exit 1
+

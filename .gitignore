@@ -1,6 +1,10 @@
 # Build artifacts
 backend/target/
 
+# IDE / local workspace
+.idea/
+.obsidian/workspace.json
+
 # 真实导出（Phase2-07）本地暂存
 backend/exports/
 exports/

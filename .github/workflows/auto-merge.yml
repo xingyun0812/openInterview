@@ -1,0 +1,35 @@
+name: auto-merge
+
+on:
+  pull_request:
+    types: [labeled, opened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: ["ci", "ai-review"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge for AFK PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ -z "$PR_NUMBER" ]; then
+            # For workflow_run events, no PR number is directly available; skip.
+            echo "No PR context; skipping."
+            exit 0
+          fi
+
+          # Only auto-merge when explicitly marked AFK
+          LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          echo "$LABELS" | grep -q "mode:AFK" || { echo "Not AFK; skip."; exit 0; }
+
+          # Enable auto-merge (squash) – will merge after required checks pass.
+          gh pr merge "$PR_NUMBER" --auto --squash
+
