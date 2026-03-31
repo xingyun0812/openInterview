@@ -1,0 +1,90 @@
+name: agent-module
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: agent-module-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'status:ready'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - screening
+          - assistant
+          - export
+          - qa
+    steps:
+      - name: Determine if this module should run
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          MOD: ${{ matrix.module }}
+        run: |
+          set -euo pipefail
+          labels="$(gh api "repos/${REPO}/issues/${ISSUE}" --jq '.labels[].name')"
+          if echo "${labels}" | grep -qx "module:${MOD}"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mark issue in_progress (idempotent)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${REPO}/issues/${ISSUE}/labels" -f labels[]="status:in_progress" >/dev/null || true
+          gh api -X DELETE "repos/${REPO}/issues/${ISSUE}/labels/status:ready" >/dev/null || true
+
+      - name: Post placeholder delivery note
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          MOD: ${{ matrix.module }}
+        run: |
+          set -euo pipefail
+          marker="<!-- agent-module:${MOD}:placeholder -->"
+          existing="$(gh api "repos/${REPO}/issues/${ISSUE}/comments?per_page=100" --jq "[.[] | select(.body // \"\" | contains(\"${marker}\"))] | length")"
+          if [ "${existing}" -gt 0 ]; then
+            exit 0
+          fi
+
+          gh api -X POST "repos/${REPO}/issues/${ISSUE}/comments" -f body="$(cat <<EOF
+${marker}
+Agent(${MOD}): 已接单（status:in_progress）。
+
+本仓库当前为 Level3（仅 GitHub Actions）骨架实现：此 Job 先验证事件链路与幂等，不直接改代码/开 PR。
+后续你确认接入模型与写入策略（开分支/开 PR/生成 evidence）后，再把这一段替换为真实执行步骤。
+EOF
+)" >/dev/null
+
+      - name: Mark done (placeholder)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${REPO}/issues/${ISSUE}/labels" -f labels[]="status:done" >/dev/null || true
+          gh api -X DELETE "repos/${REPO}/issues/${ISSUE}/labels/status:in_progress" >/dev/null || true
+
