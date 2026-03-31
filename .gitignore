@@ -1,2 +1,5 @@
 # Build artifacts
 backend/target/
+
+# Gate evidence pack JSON（由 /api/v1/evidence/gate-pack?persist=true 或测试生成）
+backend/evidence/**/gate-pack.json
