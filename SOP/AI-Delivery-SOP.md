@@ -25,9 +25,11 @@
 
 ### 2.1 Secrets（Repository -> Settings -> Secrets and variables -> Actions）
 
-> DeepSeek 采用 OpenAI 兼容接口；不要把 key 写入仓库。
+> AI Review 允许“未配置时跳过”，避免在个人仓库阶段卡住合并；有团队后再把 AI Review 设为 Required。
 
-- **`DEEPSEEK_API_KEY`**（必填）：DeepSeek API Key
+- **`ANTHROPIC_API_KEY`**（可选）：Claude 直连 API（不配则 `claude-review` 自动跳过）
+- **`CLAUDE_CODE_OAUTH_TOKEN`**（可选）：Claude Code OAuth Token（不配则 `claude-review` 自动跳过）
+- **`DEEPSEEK_API_KEY`**（可选）：DeepSeek API Key（不配则 `ai-review-deepseek` 自动跳过）
 - **`DEEPSEEK_BASE_URL`**（可选）：默认 `https://api.deepseek.com`（若你用私有网关/代理再填）
 
 ### 2.2 开启 Auto-merge
@@ -40,9 +42,9 @@
 
 - Require a pull request before merging
 - Require status checks to pass before merging
-  - 必选：`ci/backend-mvn-test`
-  - 必选：`ai-review/deepseek`
-- 对 HITL（`mode:HITL`）建议：Require approvals >= 1
+  - 必选：`backend-mvn-test`
+- 个人仓库阶段建议：**Approvals = 0**（避免“作者不能 approve 自己 PR”导致无法合并）
+- 团队化后建议：对 HITL（`mode:HITL`）把 approvals 调回 >= 1，并按需把 `claude-code-review` 设为 Required
 
 ---
 
@@ -61,6 +63,36 @@
 - Wave-1 先做
 - Wave-2/3 并行做
 - HITL（如出题审核策略）在 PR 阶段必须人工 review 才能合并
+
+---
+
+## 3.1 Level3（仅 GitHub Actions、无云）标签与状态机约定
+
+### 3.1.1 PRD 入口（主控识别）
+
+- **`type:prd`**：PRD Issue（主控入口）
+- **`orchestrator:split`**：允许 Orchestrator 拆分子 Issue（幂等：重复打也不重复创建）
+
+### 3.1.2 子 Issue 生命周期（主控分发）
+
+- **`status:ready`**：可开工（触发 module agent workflow）
+- **`status:in_progress`**：执行中（由 workflow 自动打）
+- **`status:blocked`**：阻塞（由 reconcile/执行 workflow 自动打，并评论原因）
+- **`status:done`**：完成（由 workflow 自动打，可选自动 close）
+
+### 3.1.3 交付物 DoD（Definition of Done）
+
+每个子 Issue（`type:tracer-bullet`）完成必须满足：
+
+- **PR**：至少 1 个 PR（标题建议包含 issue 编号）
+- **CI**：`backend-mvn-test` 绿
+- **Evidence**：提交证据目录（建议）：
+
+```text
+backend/evidence/issue{N}-{slug}/summary.md
+```
+
+`summary.md` 至少包含：Summary / Test plan / Evidence（actions run 或 artifact 链接）/ Risks
 
 ---
 
