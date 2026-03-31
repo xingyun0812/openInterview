@@ -399,3 +399,14 @@ CREATE TABLE IF NOT EXISTS interview_answer_assess_record (
 CREATE INDEX IF NOT EXISTS idx_interview_id_a ON interview_answer_assess_record (interview_id);
 CREATE INDEX IF NOT EXISTS idx_question_id_a ON interview_answer_assess_record (question_id);
 CREATE INDEX IF NOT EXISTS idx_candidate_id_a ON interview_answer_assess_record (candidate_id);
+
+-- Default RBAC roles for integration tests (idempotent)
+INSERT INTO sys_role (role_name, role_code, description, create_time, update_time, is_deleted)
+SELECT 'HR', 'HR', 'HR', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0
+WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE role_code = 'HR');
+INSERT INTO sys_role (role_name, role_code, description, create_time, update_time, is_deleted)
+SELECT 'Interviewer', 'INTERVIEWER', 'Interviewer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0
+WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE role_code = 'INTERVIEWER');
+INSERT INTO sys_role (role_name, role_code, description, create_time, update_time, is_deleted)
+SELECT 'Admin', 'ADMIN', 'Admin', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0
+WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE role_code = 'ADMIN');
