@@ -5,5 +5,8 @@ backend/target/
 backend/exports/
 exports/
 
+# 电子签名归档（Issue #29）本地暂存
+backend/signatures/
+
 # Gate evidence pack JSON（由 /api/v1/evidence/gate-pack?persist=true 或测试生成）
 backend/evidence/**/gate-pack.json
