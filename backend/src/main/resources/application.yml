@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: interview-backend
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: ${REDIS_TIMEOUT:2s}
   rabbitmq:
     host: localhost
     port: 5672
@@ -44,6 +51,10 @@ jwt:
 openinterview:
   security:
     permit-all: ${OPENINTERVIEW_SECURITY_PERMIT_ALL:false}
+  redis:
+    enabled: ${OPENINTERVIEW_REDIS_ENABLED:true}
+  idempotency:
+    ttl-seconds: ${OPENINTERVIEW_IDEMPOTENCY_TTL_SECONDS:300}
 
 resume:
   parse:

@@ -11,10 +11,11 @@ import com.openinterview.entity.InterviewPlanEntity;
 import com.openinterview.service.db.InterviewPlanDbService;
 import com.openinterview.statemachine.InterviewPlanStateMachine;
 import com.openinterview.statemachine.InterviewStatusMachine;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
@@ -24,27 +25,20 @@ public class InterviewPlanService {
     private static final int PENDING = InterviewPlanStateMachine.PENDING.getCode();
 
     private final InterviewPlanDbService interviewPlanDbService;
-    private final ConcurrentHashMap<String, Long> idempotencyCreateIndex = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Object> createLocks = new ConcurrentHashMap<>();
+    private final IdempotencyService idempotencyService;
+    private final Duration idempotencyTtl;
 
-    public InterviewPlanService(InterviewPlanDbService interviewPlanDbService) {
+    public InterviewPlanService(InterviewPlanDbService interviewPlanDbService,
+                                IdempotencyService idempotencyService,
+                                @Value("${openinterview.idempotency.ttl-seconds:300}") long ttlSeconds) {
         this.interviewPlanDbService = interviewPlanDbService;
-    }
-
-    private Object lockFor(String key) {
-        return createLocks.computeIfAbsent(key, k -> new Object());
+        this.idempotencyService = idempotencyService;
+        this.idempotencyTtl = Duration.ofSeconds(Math.max(1, ttlSeconds));
     }
 
     public InterviewPlanResponse create(InterviewPlanCreateRequest req, String idemKey) {
         validateTimeRange(req.interviewStartTime, req.interviewEndTime);
-        synchronized (lockFor(idemKey)) {
-            Long existingId = idempotencyCreateIndex.get(idemKey);
-            if (existingId != null) {
-                InterviewPlanEntity cached = interviewPlanDbService.getById(existingId);
-                if (cached != null) {
-                    return toResponse(cached);
-                }
-            }
+        return idempotencyService.getOrCompute("interview-plan:create:" + idemKey, idempotencyTtl, InterviewPlanResponse.class, () -> {
             InterviewPlanEntity e = new InterviewPlanEntity();
             e.interviewCode = generateInterviewCode();
             e.candidateId = req.candidateId;
@@ -63,9 +57,8 @@ public class InterviewPlanService {
             e.isDeleted = 0;
 
             InterviewPlanEntity saved = interviewPlanDbService.create(e);
-            idempotencyCreateIndex.put(idemKey, saved.id);
             return toResponse(saved);
-        }
+        });
     }
 
     public InterviewPlanResponse getById(Long id) {
