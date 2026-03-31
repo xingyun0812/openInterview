@@ -82,7 +82,8 @@ public class SignatureService {
         entity.signImgUrl = signImgUrl.trim();
         entity.signIp = signIp.trim();
         entity.signDevice = deviceInfo == null ? null : deviceInfo.trim();
-        entity.signTime = LocalDateTime.now();
+        // 统一时间精度，避免不同数据库/驱动对 nanos 的截断导致验签 hash 不一致
+        entity.signTime = LocalDateTime.now().withNano(0);
         entity.fileHash = SignatureHashUtil.sha256Hex(toSignPayload(entity));
         entity.status = SignatureStatus.SIGNED;
         entity.updateTime = LocalDateTime.now();
