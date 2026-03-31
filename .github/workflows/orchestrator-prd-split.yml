@@ -59,16 +59,19 @@ EOF
               -f labels[]="type:tracer-bullet" \
               -f labels[]="${mode}" \
               -f labels[]="${module}" \
-              -f labels[]="status:ready" \
               -f labels[]="priority:P1" \
               -f labels[]="wave:1" \
-              --jq '.number' >/dev/null
+              --jq '.number'
           }
 
-          create_issue "[Screening] Tracer bullet (from PRD #${PARENT})" "module:screening" "mode:AFK"
-          create_issue "[Assistant] Tracer bullet (from PRD #${PARENT})" "module:assistant" "mode:AFK"
-          create_issue "[Export] Tracer bullet (from PRD #${PARENT})" "module:export" "mode:AFK"
-          create_issue "[QA] Tracer bullet (from PRD #${PARENT})" "module:qa" "mode:AFK"
+          child_screening="$(create_issue "[Screening] Tracer bullet (from PRD #${PARENT})" "module:screening" "mode:AFK")"
+          child_assistant="$(create_issue "[Assistant] Tracer bullet (from PRD #${PARENT})" "module:assistant" "mode:AFK")"
+          child_export="$(create_issue "[Export] Tracer bullet (from PRD #${PARENT})" "module:export" "mode:AFK")"
+          child_qa="$(create_issue "[QA] Tracer bullet (from PRD #${PARENT})" "module:qa" "mode:AFK")"
 
-          gh api -X POST "repos/${REPO}/issues/${PARENT}/comments" -f body="Orchestrator: 已创建 4 个子 issue（screening/assistant/export/qa），并标记为 status:ready。"
+          for c in "${child_screening}" "${child_assistant}" "${child_export}" "${child_qa}"; do
+            gh api -X POST "repos/${REPO}/issues/${c}/labels" -f labels[]="status:ready" >/dev/null
+          done
+
+          gh api -X POST "repos/${REPO}/issues/${PARENT}/comments" -f body="Orchestrator: 已创建 4 个子 issue（screening/assistant/export/qa），并分别打上 status:ready（将自动触发 agent-module 开 PR）。"
 
