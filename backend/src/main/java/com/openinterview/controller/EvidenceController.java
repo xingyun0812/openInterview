@@ -13,7 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1/internal/evidence")
+@RequestMapping({"/api/v1/internal/evidence", "/api/v1/evidence"})
 public class EvidenceController {
     private final EvidenceStore evidenceStore;
     private final AuditTrailService auditTrailService;
@@ -35,6 +35,7 @@ public class EvidenceController {
         data.put("auditLogs", auditTrailService.list());
         data.put("parseFailureAudits", workflowService.getParseFailureAudits());
         data.put("exportAudits", evidenceStore.getExportAudits());
+        data.put("webhookDeliveryFailures", evidenceStore.getWebhookDeliveryFailures());
         return Result.success(data, TraceContext.getTraceId(), "EVIDENCE_EVENTS");
     }
 }

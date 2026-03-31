@@ -141,8 +141,8 @@ public class ExportController {
 
     private Result<Map<String, Object>> createExport(int exportType, String content, String jobCode, String idemKey) {
         InMemoryWorkflowService.ExportTask task = workflowService.createExportTask(exportType, content, jobCode, idemKey);
-        String mqEvent = "export.generate";
-        String webhookEvent = eventMappingService.toWebhookEvent(mqEvent);
+        String mqCreate = "export.task.create";
+        String webhookCreate = eventMappingService.toWebhookEvent(mqCreate);
         Map<String, Object> data = new HashMap<>();
         data.put("taskId", task.taskId);
         data.put("taskCode", task.taskCode);
@@ -156,9 +156,14 @@ public class ExportController {
         data.put("fileSize", task.fileSize);
         data.put("failReason", task.failReason);
         data.put("retryCount", task.retryCount);
-        data.put("mqEventCode", mqEvent);
-        data.put("webhookEventCode", webhookEvent);
-        eventBridgeService.publish(mqEvent, task.bizCode, data);
+        data.put("mqEventCode", mqCreate);
+        data.put("webhookEventCode", webhookCreate);
+        eventBridgeService.publish(mqCreate, task.bizCode, data);
+        if (task.taskStatus == InMemoryWorkflowService.TASK_SUCCESS) {
+            eventBridgeService.publish("export.task.complete", task.bizCode, data);
+        } else if (task.taskStatus == InMemoryWorkflowService.TASK_FAILED) {
+            eventBridgeService.publish("export.task.failed", task.bizCode, data);
+        }
         evidenceStore.addExportAudit(auditPayload("EXPORT_CREATE", task));
         auditTrailService.record("export", "export.create", task.bizCode,
                 task.taskStatus == InMemoryWorkflowService.TASK_FAILED ? task.lastErrorCode : "0",

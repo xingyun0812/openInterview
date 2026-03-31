@@ -108,7 +108,7 @@ class Issue8AnswerEvaluateTest {
                 .andExpect(jsonPath("$.data.mqEvents").isArray())
                 .andReturn();
         String evidence = ev.getResponse().getContentAsString();
-        Assertions.assertTrue(evidence.contains("\"eventCode\":\"interview.answer.evaluate\""));
+        Assertions.assertTrue(evidence.contains("\"eventCode\":\"interview.assistant.answer.evaluate\""));
         Assertions.assertTrue(evidence.contains("\"bizCode\":\"" + bizCode + "\""));
         Assertions.assertTrue(evidence.contains("trace-issue8-f"));
     }
