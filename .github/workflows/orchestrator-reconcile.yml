@@ -1,0 +1,53 @@
+name: orchestrator-reconcile
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: orchestrator-reconcile
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reconcile blocked tasks (best-effort)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          issues="$(gh api "repos/${REPO}/issues?state=open&per_page=100&labels=status:in_progress" --jq '.[] | {number, title} | @base64')"
+          if [ -z "${issues}" ]; then
+            exit 0
+          fi
+
+          echo "${issues}" | while read -r row; do
+            [ -z "${row}" ] && continue
+            dec() { echo "${1}" | base64 --decode; }
+            num="$(dec "${row}" | jq -r '.number')"
+
+            pr_url="$(gh api "repos/${REPO}/issues/${num}" --jq '.pull_request.url // empty' || true)"
+            if [ -z "${pr_url}" ]; then
+              marker="<!-- reconcile:blocked:no_pr -->"
+              existing="$(gh api "repos/${REPO}/issues/${num}/comments?per_page=100" --jq "[.[] | select(.body // \"\" | contains(\"${marker}\"))] | length")"
+              if [ "${existing}" -eq 0 ]; then
+                gh api -X POST "repos/${REPO}/issues/${num}/comments" -f body="${marker}\nReconcile: 标记为 blocked。原因：未发现关联 PR（issue 未绑定 pull_request）。" >/dev/null || true
+              fi
+              gh api -X POST "repos/${REPO}/issues/${num}/labels" -f labels[]="status:blocked" >/dev/null || true
+              gh api -X DELETE "repos/${REPO}/issues/${num}/labels/status:in_progress" >/dev/null || true
+              continue
+            fi
+
+            # 对 issue->PR 的映射在纯 Actions 下不稳定；这里先做占位 reconcile
+            # 后续接入“子 agent 自动开 PR”后，再改成：查询 PR checks 结果并自动推进状态。
+          done
+
