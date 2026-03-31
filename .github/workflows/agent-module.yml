@@ -61,6 +61,7 @@ jobs:
 
       - name: Create branch and PR if not exists (one issue one PR)
         if: steps.gate.outputs.run == 'true'
+        id: create_pr
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -112,10 +113,19 @@ Auto-generated PR for issue #${ISSUE} by agent-module workflow.
 
 DoD (skeleton):
 - [ ] backend-mvn-test green
+- [ ] local-subagent-gate green (add PR label: subagent:done)
 - [ ] Update code for module: ${MOD}
 - [ ] Fill evidence in ${evidence_dir}/summary.md
 EOF
 )" >/dev/null
+
+          echo "evidence_dir=${evidence_dir}" >> "$GITHUB_OUTPUT"
+
+          pr_number="$(gh api "repos/${REPO}/pulls?state=open&head=${owner}:${branch}" --jq '.[0].number')"
+          if [ -n "${pr_number}" ] && [ "${pr_number}" != "null" ]; then
+            gh api -X POST "repos/${REPO}/issues/${pr_number}/labels" -f labels[]="subagent:pending" >/dev/null || true
+            echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Post placeholder delivery note
         if: steps.gate.outputs.run == 'true'
@@ -132,12 +142,20 @@ EOF
             exit 0
           fi
 
+          evidence_dir="${{ steps.create_pr.outputs.evidence_dir }}"
           gh api -X POST "repos/${REPO}/issues/${ISSUE}/comments" -f body="$(cat <<EOF
 ${marker}
 Agent(${MOD}): 已接单（status:in_progress）。
 
-本仓库当前为 Level3（仅 GitHub Actions）骨架实现：此 Job 先验证事件链路与幂等，不直接改代码/开 PR。
-后续你确认接入模型与写入策略（开分支/开 PR/生成 evidence）后，再把这一段替换为真实执行步骤。
+已自动创建 PR 分支与 PR。由于你当前使用免费 Claude 账号（无法提供 `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` 给 Actions 自动改代码），接下来需要你在本地用 Cursor 来完成改动并推回该 PR 分支。
+
+本地执行步骤（建议复制到 Cursor Agent 执行）：
+1) checkout PR 分支：feat/issue-${ISSUE}-${MOD}
+2) 按 issue 需求改代码 + 补测试
+3) `cd backend && mvn test`
+4) 填写并提交：${evidence_dir}/summary.md（去掉 TODO）
+5) push 到远端分支
+6) 在 PR 上加标签：subagent:done（否则 `local-subagent-gate` 会阻止合并）
 EOF
 )" >/dev/null
 
@@ -149,6 +167,6 @@ EOF
           ISSUE: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
-          gh api -X POST "repos/${REPO}/issues/${ISSUE}/labels" -f labels[]="status:done" >/dev/null || true
-          gh api -X DELETE "repos/${REPO}/issues/${ISSUE}/labels/status:in_progress" >/dev/null || true
+          # Do not auto mark done here. Completion is driven by PR merge and/or manual subagent:done label gate.
+          echo "Skip auto status:done"
 

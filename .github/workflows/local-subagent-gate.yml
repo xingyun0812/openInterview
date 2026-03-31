@@ -1,0 +1,68 @@
+name: local-subagent-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  local-subagent-gate:
+    name: local-subagent-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce local subagent completion marker
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # 1) Require PR label as manual acknowledgement that local Cursor agent finished.
+          has_label="$(gh api "repos/${REPO}/issues/${PR}" --jq '[.labels[].name] | any(. == "subagent:done")')"
+          if [ "${has_label}" != "true" ]; then
+            cat <<'EOF' >&2
+Missing required PR label: subagent:done
+
+How to satisfy:
+- Run the local Cursor agent on this PR branch to implement the issue + tests.
+- Update evidence summary.md (remove TODOs).
+- Add PR label: subagent:done
+EOF
+            exit 1
+          fi
+
+          # 2) Require evidence summaries to be filled (no TODO left).
+          # We only check files under backend/evidence/**/summary.md in this PR.
+          changed="$(git diff --name-only origin/main...HEAD | tr -d '\r' || true)"
+          if [ -z "${changed}" ]; then
+            echo "No changed files detected."
+          fi
+
+          summaries="$(echo "${changed}" | grep -E '^backend/evidence/.+/summary\.md$' || true)"
+          if [ -z "${summaries}" ]; then
+            echo "No evidence summary.md changed in this PR. (Allowed, but recommended.)"
+            exit 0
+          fi
+
+          bad=0
+          while IFS= read -r f; do
+            if rg -n "TODO" "$f" >/dev/null 2>&1; then
+              echo "Evidence file still contains TODO: $f" >&2
+              bad=1
+            fi
+          done <<< "${summaries}"
+
+          if [ "${bad}" -ne 0 ]; then
+            echo "Please fill evidence summary.md (remove TODO) before labeling subagent:done." >&2
+            exit 1
+          fi
+

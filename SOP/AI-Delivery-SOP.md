@@ -43,6 +43,7 @@
 - Require a pull request before merging
 - Require status checks to pass before merging
   - 必选：`backend-mvn-test`
+- 若你使用“本地 Cursor 作为子 agent”（免费 Claude 无法在 Actions 自动改代码），建议把 `local-subagent-gate` 也设为 Required，用来强制“本地已完成并自证”后才能合并
 - 个人仓库阶段建议：**Approvals = 0**（避免“作者不能 approve 自己 PR”导致无法合并）
 - 团队化后建议：对 HITL（`mode:HITL`）把 approvals 调回 >= 1，并按需把 `claude-code-review` 设为 Required
 
