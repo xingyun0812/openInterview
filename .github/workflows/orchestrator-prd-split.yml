@@ -1,0 +1,74 @@
+name: orchestrator-prd-split
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: prd-split-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  split:
+    if: |
+      github.event.label.name == 'type:prd' ||
+      github.event.label.name == 'orchestrator:split'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create child issues (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PARENT: ${{ github.event.issue.number }}
+          TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+
+          existing_count="$(gh api "repos/${REPO}/issues?state=all&per_page=100&labels=type:tracer-bullet" \
+            --jq "[.[] | select(.body // \"\" | contains(\"Parent: #${PARENT}\"))] | length")"
+
+          if [ "${existing_count}" -gt 0 ]; then
+            gh api -X POST "repos/${REPO}/issues/${PARENT}/comments" -f body="Orchestrator: 已检测到 ${existing_count} 个子 issue（Parent: #${PARENT}），本次不重复创建。"
+            exit 0
+          fi
+
+          body_common="$(cat <<EOF
+Parent: #${PARENT}
+
+## Scope
+- 从 PRD 拆分而来，请补齐本切片的接口/DB/测试/证据。
+
+## DoD
+- 至少 1 个 PR（标题包含 #${PARENT} 或本 issue 编号）
+- CI: backend-mvn-test 通过
+- Evidence: backend/evidence/issue{N}-{slug}/summary.md
+EOF
+)"
+
+          create_issue() {
+            local t="$1"
+            local module="$2"
+            local mode="$3"
+            gh api -X POST "repos/${REPO}/issues" \
+              -f title="$t" \
+              -f body="${body_common}" \
+              -f labels[]="type:tracer-bullet" \
+              -f labels[]="${mode}" \
+              -f labels[]="${module}" \
+              -f labels[]="status:ready" \
+              -f labels[]="priority:P1" \
+              -f labels[]="wave:1" \
+              --jq '.number' >/dev/null
+          }
+
+          create_issue "[Screening] Tracer bullet (from PRD #${PARENT})" "module:screening" "mode:AFK"
+          create_issue "[Assistant] Tracer bullet (from PRD #${PARENT})" "module:assistant" "mode:AFK"
+          create_issue "[Export] Tracer bullet (from PRD #${PARENT})" "module:export" "mode:AFK"
+          create_issue "[QA] Tracer bullet (from PRD #${PARENT})" "module:qa" "mode:AFK"
+
+          gh api -X POST "repos/${REPO}/issues/${PARENT}/comments" -f body="Orchestrator: 已创建 4 个子 issue（screening/assistant/export/qa），并标记为 status:ready。"
+
