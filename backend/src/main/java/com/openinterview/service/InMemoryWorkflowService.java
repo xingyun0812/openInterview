@@ -1,5 +1,6 @@
 package com.openinterview.service;
 
+import com.openinterview.ai.AiAdapter;
 import com.openinterview.common.ApiException;
 import com.openinterview.common.ErrorCode;
 import org.springframework.stereotype.Service;
@@ -61,6 +62,12 @@ public class InMemoryWorkflowService {
     private final Map<String, ExportTask> exportTaskStore = new ConcurrentHashMap<>();
     /** 对应 interview_answer_assess_record，后续可换 DB */
     private final Map<String, AnswerAssessRecord> answerAssessStore = new ConcurrentHashMap<>();
+
+    private final AiAdapter aiAdapter;
+
+    public InMemoryWorkflowService(AiAdapter aiAdapter) {
+        this.aiAdapter = aiAdapter;
+    }
 
     public <T> T idempotent(String key, Supplier<T> supplier) {
         @SuppressWarnings("unchecked")
@@ -170,10 +177,13 @@ public class InMemoryWorkflowService {
         }
 
         result.parseStatus = PARSE_SUCCESS;
-        result.basicInfo = java.util.Map.of("candidateId", task.candidateId, "name", "候选人" + task.candidateId);
-        result.education = java.util.List.of(java.util.Map.of("school", "示例大学", "degree", "本科"));
-        result.workExperience = java.util.List.of(java.util.Map.of("company", "示例科技", "title", "后端工程师"));
-        result.skillTags = java.util.List.of("Java", "Spring Boot", "MySQL");
+        StoredResume storedResume = resumeStore.get(task.resumeUrl);
+        byte[] content = storedResume == null ? null : storedResume.content;
+        AiAdapter.ParseResumeOutput aiOut = aiAdapter.parseResume(new AiAdapter.ParseResumeInput(task.candidateId, task.resumeUrl, content));
+        result.basicInfo = aiOut.basicInfo();
+        result.education = aiOut.education();
+        result.workExperience = aiOut.workExperience();
+        result.skillTags = aiOut.skillTags();
         result.failReason = null;
         result.errorCode = null;
         attemptResult.success = true;
@@ -252,7 +262,7 @@ public class InMemoryWorkflowService {
             record.inputSnapshotHash = inputSnapshotHash;
             record.reviewStatus = REVIEW_PENDING;
             record.bizCode = requestCode;
-            record.questions = buildMockQuestions(interviewId, resumeSectionId, difficulty, questionCount);
+            record.questions = aiAdapter.generateQuestions(new AiAdapter.GenerateQuestionsInput(interviewId, resumeSectionId, difficulty, questionCount));
             questionStore.put(requestCode, record);
             return record;
         });
@@ -308,10 +318,11 @@ public class InMemoryWorkflowService {
             result.bizCode = "ANS" + nowCode();
             result.interviewId = interviewId;
             result.questionId = questionId;
-            result.accuracyScore = new BigDecimal("82.50");
-            result.coverageScore = new BigDecimal("78.00");
-            result.clarityScore = new BigDecimal("80.00");
-            result.followUpSuggest = "请补充系统设计中的容量评估与降级方案。";
+            AiAdapter.EvaluateAnswerOutput aiOut = aiAdapter.evaluateAnswer(new AiAdapter.EvaluateAnswerInput(interviewId, questionId, answerText));
+            result.accuracyScore = new BigDecimal(aiOut.accuracyScore());
+            result.coverageScore = new BigDecimal(aiOut.coverageScore());
+            result.clarityScore = new BigDecimal(aiOut.clarityScore());
+            result.followUpSuggest = aiOut.followUpSuggest();
 
             AnswerAssessRecord stored = new AnswerAssessRecord();
             stored.recordCode = result.bizCode;
