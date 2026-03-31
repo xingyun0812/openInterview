@@ -7,6 +7,7 @@ import com.openinterview.service.GateEvidenceService;
 import com.openinterview.service.InMemoryWorkflowService;
 import com.openinterview.trace.TraceContext;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -14,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
+@RequestMapping({"/api/v1/internal/evidence", "/api/v1/evidence"})
 public class EvidenceController {
     private final EvidenceStore evidenceStore;
     private final AuditTrailService auditTrailService;
@@ -30,7 +32,7 @@ public class EvidenceController {
         this.gateEvidenceService = gateEvidenceService;
     }
 
-    @GetMapping("/api/v1/internal/evidence/events")
+    @GetMapping("/events")
     public Result<Map<String, Object>> events() {
         Map<String, Object> data = new HashMap<>();
         data.put("mqEvents", evidenceStore.getMqEvents());
@@ -38,10 +40,11 @@ public class EvidenceController {
         data.put("auditLogs", auditTrailService.list());
         data.put("parseFailureAudits", workflowService.getParseFailureAudits());
         data.put("exportAudits", evidenceStore.getExportAudits());
+        data.put("webhookDeliveryFailures", evidenceStore.getWebhookDeliveryFailures());
         return Result.success(data, TraceContext.getTraceId(), "EVIDENCE_EVENTS");
     }
 
-    @GetMapping({"/api/v1/evidence/gate-pack", "/api/v1/internal/evidence/gate-pack"})
+    @GetMapping("/gate-pack")
     public Result<Map<String, Object>> gatePack(@RequestParam(name = "persist", required = false) Boolean persist) throws Exception {
         Map<String, Object> pack = gateEvidenceService.buildGatePack();
         if (Boolean.TRUE.equals(persist)) {
@@ -50,7 +53,7 @@ public class EvidenceController {
         return Result.success(pack, TraceContext.getTraceId(), "GATE_PACK");
     }
 
-    @GetMapping({"/api/v1/evidence/gate-check", "/api/v1/internal/evidence/gate-check"})
+    @GetMapping("/gate-check")
     public Result<Map<String, Object>> gateCheck() {
         Map<String, Object> pack = gateEvidenceService.buildGatePack();
         Map<String, Object> check = gateEvidenceService.buildGateCheck(pack);

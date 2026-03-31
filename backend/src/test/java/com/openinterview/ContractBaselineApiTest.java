@@ -46,7 +46,7 @@ class ContractBaselineApiTest {
                 .andExpect(header().string("X-Trace-Id", "trace_case_01"))
                 .andExpect(jsonPath("$.data.screenStatus").value(2))
                 .andExpect(jsonPath("$.data.mqEventCode").value("candidate.resume.screen"))
-                .andExpect(jsonPath("$.data.webhookEventCode").value("candidate.resume.screened"))
+                .andExpect(jsonPath("$.data.webhookEventCode").value("CANDIDATE_RESUME_SCREENED"))
                 .andExpect(jsonPath("$.traceId").value("trace_case_01"));
 
         mockMvc.perform(get("/api/v1/candidate/resume/screen/result/10001")

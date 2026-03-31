@@ -153,7 +153,7 @@ class Regression30ApiTest {
                         .content("{\"candidateId\":10010,\"jobCode\":\"JAVA_ADV_01\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.mqEventCode").value("candidate.resume.screen"))
-                .andExpect(jsonPath("$.data.webhookEventCode").value("candidate.resume.screened"));
+                .andExpect(jsonPath("$.data.webhookEventCode").value("CANDIDATE_RESUME_SCREENED"));
     }
 
     @Test
@@ -248,7 +248,7 @@ class Regression30ApiTest {
                         .content("{\"interviewId\":50017,\"questionId\":70017,\"answerText\":\"answer\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accuracyScore").exists())
-                .andExpect(jsonPath("$.data.webhookEventCode").value("interview.answer.evaluated"));
+                .andExpect(jsonPath("$.data.webhookEventCode").value("INTERVIEW_ANSWER_EVALUATED"));
     }
 
     @Test

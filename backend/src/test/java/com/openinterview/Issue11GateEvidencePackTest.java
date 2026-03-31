@@ -90,7 +90,7 @@ class Issue11GateEvidencePackTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.gate5.status").value("fail"))
                 .andExpect(jsonPath("$.data.gate5.eventMapping.missingEvents").isArray())
-                .andExpect(jsonPath("$.data.gate5.eventMapping.missingEvents.length()").value(5));
+                .andExpect(jsonPath("$.data.gate5.eventMapping.missingEvents.length()").value(eventMappingService.expectedMqEventCodes().size()));
     }
 
     @Test

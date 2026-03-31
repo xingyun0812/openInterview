@@ -12,6 +12,7 @@ public class EvidenceStore {
     private final List<EventMessage> mqEvents = Collections.synchronizedList(new ArrayList<>());
     private final List<EventMessage> webhookEvents = Collections.synchronizedList(new ArrayList<>());
     private final List<Map<String, Object>> exportAudits = Collections.synchronizedList(new ArrayList<>());
+    private final List<Map<String, Object>> webhookDeliveryFailures = Collections.synchronizedList(new ArrayList<>());
     private volatile RegressionSnapshot regressionSnapshot;
 
     public void addMq(EventMessage event) {
@@ -38,9 +39,27 @@ public class EvidenceStore {
         return new ArrayList<>(exportAudits);
     }
 
-    /**
-     * 覆盖式写入回归测试快照（用于门禁 gate4 或单测注入；优先级高于 surefire 解析）。
-     */
+    public void addWebhookDeliveryFailure(String traceId,
+                                          String bizCode,
+                                          String errorCode,
+                                          String failReason,
+                                          String mqEventCode,
+                                          String webhookEventCode) {
+        Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("traceId", traceId);
+        row.put("bizCode", bizCode);
+        row.put("errorCode", errorCode);
+        row.put("failReason", failReason);
+        row.put("mqEventCode", mqEventCode);
+        row.put("webhookEventCode", webhookEventCode);
+        row.put("occurTime", java.time.LocalDateTime.now().toString());
+        webhookDeliveryFailures.add(row);
+    }
+
+    public List<Map<String, Object>> getWebhookDeliveryFailures() {
+        return new ArrayList<>(webhookDeliveryFailures);
+    }
+
     public void setRegressionSnapshot(int totalTests, int failureCount, List<String> failureNames) {
         RegressionSnapshot snap = new RegressionSnapshot();
         snap.totalTests = totalTests;
@@ -57,14 +76,12 @@ public class EvidenceStore {
         this.regressionSnapshot = null;
     }
 
-    /**
-     * 清空 MQ/Webhook/导出审计与回归快照（供门禁单测隔离使用）。
-     */
     public void clearAll() {
         synchronized (mqEvents) {
             mqEvents.clear();
             webhookEvents.clear();
             exportAudits.clear();
+            webhookDeliveryFailures.clear();
         }
         regressionSnapshot = null;
     }

@@ -65,6 +65,10 @@ public class InterviewAssistantController {
         data.put("reviewStatus", record.reviewStatus);
         data.put("reviewComment", record.reviewComment);
         data.put("reviewTime", record.reviewTime);
+        String mqEvent = "interview.question.review";
+        data.put("mqEventCode", mqEvent);
+        data.put("webhookEventCode", eventMappingService.toWebhookEvent(mqEvent));
+        eventBridgeService.publish(mqEvent, record.bizCode, data);
         return Result.success(data, TraceContext.getTraceId(), record.bizCode);
     }
 
@@ -74,7 +78,7 @@ public class InterviewAssistantController {
         InMemoryWorkflowService.AnswerEvaluateResult result = workflowService.evaluateAnswer(
                 request.interviewId, request.questionId, request.answerText, idemKey
         );
-        String mqEvent = "interview.answer.evaluate";
+        String mqEvent = "interview.assistant.answer.evaluate";
         String webhookEvent = eventMappingService.toWebhookEvent(mqEvent);
         Map<String, Object> data = new HashMap<>();
         data.put("accuracyScore", result.accuracyScore);
