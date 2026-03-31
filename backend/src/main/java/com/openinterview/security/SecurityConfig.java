@@ -32,7 +32,14 @@ public class SecurityConfig {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
-                    auth.requestMatchers("/api/auth/**", "/actuator/**").permitAll();
+                    auth.requestMatchers(
+                            "/api/auth/**",
+                            "/actuator/**",
+                            "/open-api/**",
+                            "/v3/api-docs/**",
+                            "/swagger-ui/**",
+                            "/swagger-ui.html"
+                    ).permitAll();
                     if (permitAll) {
                         auth.anyRequest().permitAll();
                     } else {
