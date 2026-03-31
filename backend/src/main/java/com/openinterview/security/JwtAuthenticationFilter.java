@@ -15,6 +15,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.openinterview.service.TokenBlacklistService;
+import com.openinterview.util.CryptoHash;
+
 import java.io.IOException;
 
 @Component
@@ -24,10 +27,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final UserDetailsService userDetailsService;
+    private final TokenBlacklistService tokenBlacklistService;
 
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, UserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider,
+                                   UserDetailsService userDetailsService,
+                                   TokenBlacklistService tokenBlacklistService) {
         this.jwtTokenProvider = jwtTokenProvider;
         this.userDetailsService = userDetailsService;
+        this.tokenBlacklistService = tokenBlacklistService;
     }
 
     @Override
@@ -44,6 +51,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         if (!jwtTokenProvider.validateToken(token)) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+        String tokenId = CryptoHash.sha256Hex(token);
+        if (tokenBlacklistService.isBlacklisted(tokenId)) {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
