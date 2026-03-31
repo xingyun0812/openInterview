@@ -1,3 +1,7 @@
+openinterview:
+  security:
+    permit-all: true
+
 resume:
   parse:
     retry:

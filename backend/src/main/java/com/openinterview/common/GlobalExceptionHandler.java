@@ -16,9 +16,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Result<Void>> handleApiException(ApiException ex) {
-        HttpStatus status = ex.getErrorCode() == ErrorCode.EXPORT_TASK_NOT_FOUND
-                ? HttpStatus.NOT_FOUND
-                : HttpStatus.BAD_REQUEST;
+        HttpStatus status;
+        if (ex.getErrorCode() == ErrorCode.EXPORT_TASK_NOT_FOUND) {
+            status = HttpStatus.NOT_FOUND;
+        } else if (ex.getErrorCode() == ErrorCode.UNAUTHORIZED) {
+            status = HttpStatus.UNAUTHORIZED;
+        } else if (ex.getErrorCode() == ErrorCode.FORBIDDEN) {
+            status = HttpStatus.FORBIDDEN;
+        } else {
+            status = HttpStatus.BAD_REQUEST;
+        }
         return ResponseEntity.status(status)
                 .body(Result.fail(ex.getErrorCode(), TraceContext.getTraceId(), ex.getBizCode(), ex.getMessage()));
     }

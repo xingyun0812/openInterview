@@ -36,6 +36,15 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
 
+jwt:
+  secret: ${JWT_SECRET:openinterview-jwt-secret-key-must-be-at-least-256-bits}
+  expiration-ms: ${JWT_EXPIRATION:3600000}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION:86400000}
+
+openinterview:
+  security:
+    permit-all: ${OPENINTERVIEW_SECURITY_PERMIT_ALL:false}
+
 resume:
   parse:
     retry:
