@@ -65,11 +65,17 @@ services:
       - openinterview
 
   backend:
-    build:
-      context: ./backend
+    # 说明：
+    # - 由于你当前环境拉取 docker.io 基础镜像会 403/EOF，backend 镜像无法稳定重建
+    # - 这里改成“宿主机 mvn 打包 + 容器运行”：
+    #   先执行：cd backend && mvn -DskipTests package
+    #   然后 compose 直接运行本地已有的 openinterview-backend:latest，并把 target/app.jar 挂载进去启动
+    image: openinterview-backend:latest
     container_name: openinterview-backend
+    volumes:
+      - ./backend/target/app.jar:/app/app.jar:ro
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/interview_platform?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8mb4
+      DB_URL: jdbc:mysql://mysql:3306/interview_platform?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
       DB_USER: root
       DB_PASS: root
       REDIS_HOST: redis
@@ -109,10 +115,16 @@ services:
     networks:
       - openinterview
 
-  # TODO(#33): 用前端构建产物替换该占位服务（建议用 nginx 静态托管 dist/）
   frontend:
     image: nginx:alpine
     container_name: openinterview-frontend
+    volumes:
+      # 先在本机执行：cd admin && npm install && npm run build
+      - ./admin/dist:/usr/share/nginx/html:ro
+      - ./admin/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      # macOS/Windows 的 Docker Desktop 通常自带该域名；加这一行可增强兼容性（Linux 也可用 host-gateway）
+      - "host.docker.internal:host-gateway"
     ports:
       - "5173:80"
     networks:
