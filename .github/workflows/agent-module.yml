@@ -76,6 +76,13 @@ jobs:
           pr_count="$(gh api "repos/${REPO}/pulls?state=all&head=${owner}:${branch}" --jq 'length')"
           if [ "${pr_count}" -gt 0 ]; then
             echo "PR for issue #${ISSUE} and module ${MOD} already exists on branch ${branch}, skip creating."
+            evidence_dir="backend/evidence/issue${ISSUE}-${MOD}"
+            echo "evidence_dir=${evidence_dir}" >> "$GITHUB_OUTPUT"
+            echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+            pr_existing="$(gh api "repos/${REPO}/pulls?state=open&head=${owner}:${branch}" --jq '.[0].number // empty')"
+            if [ -n "${pr_existing}" ] && [ "${pr_existing}" != "null" ]; then
+              echo "pr_number=${pr_existing}" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
 
@@ -88,14 +95,14 @@ jobs:
 
           evidence_dir="backend/evidence/issue${ISSUE}-${MOD}"
           mkdir -p "${evidence_dir}"
-          cat > "${evidence_dir}/summary.md" <<EOF
-# Evidence for issue #${ISSUE} (${MOD})
-
-- Summary: TODO
-- Test plan: TODO
-- Evidence:
-  - CI: backend-mvn-test
-EOF
+          {
+            echo "# Evidence for issue #${ISSUE} (${MOD})"
+            echo ""
+            echo "- Summary: TODO"
+            echo "- Test plan: TODO"
+            echo "- Evidence:"
+            echo "  - CI: backend-mvn-test"
+          } > "${evidence_dir}/summary.md"
 
           git add "${evidence_dir}/summary.md"
           git commit -m "chore(issue #${ISSUE}): scaffold evidence dir for ${MOD}" || echo "Nothing to commit"
@@ -104,22 +111,23 @@ EOF
           title_prefix="[${MOD}]"
           pr_title="${title_prefix} tracer bullet for issue #${ISSUE}"
 
+          pr_body="$(printf '%s\n' \
+            "Auto-generated PR for issue #${ISSUE} by agent-module workflow." \
+            "" \
+            "DoD (skeleton):" \
+            "- [ ] backend-mvn-test green" \
+            "- [ ] local-subagent-gate green (add PR label: subagent:done)" \
+            "- [ ] Update code for module: ${MOD}" \
+            "- [ ] Fill evidence in ${evidence_dir}/summary.md")"
+
           gh pr create \
             --base main \
             --head "${branch}" \
             --title "${pr_title}" \
-            --body "$(cat <<EOF
-Auto-generated PR for issue #${ISSUE} by agent-module workflow.
-
-DoD (skeleton):
-- [ ] backend-mvn-test green
-- [ ] local-subagent-gate green (add PR label: subagent:done)
-- [ ] Update code for module: ${MOD}
-- [ ] Fill evidence in ${evidence_dir}/summary.md
-EOF
-)" >/dev/null
+            --body "${pr_body}" >/dev/null
 
           echo "evidence_dir=${evidence_dir}" >> "$GITHUB_OUTPUT"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
 
           pr_number="$(gh api "repos/${REPO}/pulls?state=open&head=${owner}:${branch}" --jq '.[0].number')"
           if [ -n "${pr_number}" ] && [ "${pr_number}" != "null" ]; then
@@ -127,7 +135,7 @@ EOF
             echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Post placeholder delivery note
+      - name: Post Cursor subagent prompt
         if: steps.gate.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -136,28 +144,94 @@ EOF
           MOD: ${{ matrix.module }}
         run: |
           set -euo pipefail
-          marker="<!-- agent-module:${MOD}:placeholder -->"
+          marker="<!-- agent-module:${MOD}:cursor-prompt-v2 -->"
           existing="$(gh api "repos/${REPO}/issues/${ISSUE}/comments?per_page=100" --jq "[.[] | select(.body // \"\" | contains(\"${marker}\"))] | length")"
           if [ "${existing}" -gt 0 ]; then
             exit 0
           fi
 
+          owner="${REPO%/*}"
+          branch="${{ steps.create_pr.outputs.branch }}"
           evidence_dir="${{ steps.create_pr.outputs.evidence_dir }}"
-          gh api -X POST "repos/${REPO}/issues/${ISSUE}/comments" -f body="$(cat <<EOF
-${marker}
-Agent(${MOD}): 已接单（status:in_progress）。
+          pr_num="${{ steps.create_pr.outputs.pr_number }}"
+          if [ -z "${branch}" ]; then
+            branch="feat/issue-${ISSUE}-${MOD}"
+          fi
+          if [ -z "${evidence_dir}" ]; then
+            evidence_dir="backend/evidence/issue${ISSUE}-${MOD}"
+          fi
+          if [ -z "${pr_num}" ] || [ "${pr_num}" = "null" ]; then
+            pr_num="$(gh api "repos/${REPO}/pulls?state=open&head=${owner}:${branch}" --jq '.[0].number // empty')"
+          fi
+          export MARKER="${marker}"
+          export BRANCH="${branch}"
+          export EVIDENCE_DIR="${evidence_dir}"
+          export PR_NUM="${pr_num}"
 
-已自动创建 PR 分支与 PR。由于你当前使用免费 Claude 账号（无法提供 `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` 给 Actions 自动改代码），接下来需要你在本地用 Cursor 来完成改动并推回该 PR 分支。
+          comment_body="$(python3 <<'PY'
+          import os
 
-本地执行步骤（建议复制到 Cursor Agent 执行）：
-1) checkout PR 分支：feat/issue-${ISSUE}-${MOD}
-2) 按 issue 需求改代码 + 补测试
-3) `cd backend && mvn test`
-4) 填写并提交：${evidence_dir}/summary.md（去掉 TODO）
-5) push 到远端分支
-6) 在 PR 上加标签：subagent:done（否则 `local-subagent-gate` 会阻止合并）
-EOF
-)" >/dev/null
+          m = os.environ["MARKER"]
+          issue = os.environ["ISSUE"]
+          mod = os.environ["MOD"]
+          repo = os.environ["REPO"]
+          branch = os.environ["BRANCH"]
+          evidence_dir = os.environ["EVIDENCE_DIR"]
+          pr_num = (os.environ.get("PR_NUM") or "").strip()
+          pr_cell = f"https://github.com/{repo}/pull/{pr_num}" if pr_num else "（请在本仓库 Pull requests 中按分支名查找）"
+
+          text_block = f"""你是本仓库「子 Agent」，只负责当前 tracer bullet：module={mod}，对应 GitHub Issue #{issue}。
+
+          【硬约束】
+          1. 只改与本模块相关的后端代码与测试；不要大范围重构、不要改无关模块。
+          2. 遵守仓库契约：写接口必须带 X-Idempotency-Key；traceId/bizCode/errorCode 约定不变。
+          3. 改完后必须在本地执行：cd backend && mvn test（全部通过再 push）。
+          4. 填写 {evidence_dir}/summary.md：写清 Summary / Test plan / Evidence（可贴 CI run 链接），删除文中所有 TODO。
+          5. 提交并 push 到远程分支：{branch}
+          6. 合并门禁要求：在 GitHub 上给该 PR 添加标签 subagent:done（否则 local-subagent-gate 失败无法合并 main）。
+
+          【操作步骤】
+          1. git fetch origin && git checkout {branch}
+          2. 阅读 Issue #{issue} 的正文与 Parent PRD 链接，明确本切片范围。
+          3. 实现需求并补充/更新测试。
+          4. cd backend && mvn test
+          5. 更新 {evidence_dir}/summary.md
+          6. git add -A && git commit -m "feat(issue #{issue}): {mod} tracer bullet" && git push -u origin {branch}
+          7. 打开 PR，确认 CI 通过后，给 PR 加标签 subagent:done
+
+          【输出】
+          完成后在 Issue #{issue} 下简短回复：已完成、PR 链接、主要改动一句话。"""
+          text_block = "\n".join(s.lstrip() for s in text_block.splitlines())
+
+          parts = [
+              m,
+              "### 本地子 Agent（Cursor）任务",
+              "",
+              "GitHub Actions 已为该子 Issue 开好分支与 PR（若已存在则复用）。**云端不会自动改业务代码**；请你在本机用 **Cursor Agent** 完成实现并推回。",
+              "",
+              "| 项 | 值 |",
+              "|---|---|",
+              f"| 仓库 | `{repo}` |",
+              f"| 子 Issue | #{issue} |",
+              f"| 模块 | `module:{mod}` |",
+              f"| 分支 | `{branch}` |",
+              f"| PR | {pr_cell} |",
+              f"| 证据文件 | `{evidence_dir}/summary.md` |",
+              "",
+              "---",
+              "",
+              "#### 下面整段复制到 Cursor Chat（作为子 Agent 系统提示 / 首条消息）",
+              "",
+              "```text",
+              text_block,
+              "```",
+              "",
+          ]
+          print("\n".join(parts), end="")
+          PY
+          )"
+
+          gh api -X POST "repos/${REPO}/issues/${ISSUE}/comments" -f body="${comment_body}" >/dev/null
 
       - name: Mark done (placeholder)
         if: steps.gate.outputs.run == 'true'
