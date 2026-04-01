@@ -37,3 +37,56 @@ jobs:
           path: |
             backend/target/surefire-reports/**
 
+  # 与 backend-mvn-test 同 workflow，确保 pull_request 上一定调度（独立 yml 曾从未产生 pull_request run）
+  local-subagent-gate:
+    name: local-subagent-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce local subagent completion marker
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          has_label="$(gh api "repos/${REPO}/issues/${PR}" --jq '[.labels[].name] | any(. == "subagent:done")')"
+          if [ "${has_label}" != "true" ]; then
+            printf '%s\n' \
+              'Missing required PR label: subagent:done' '' \
+              'How to satisfy:' \
+              '- Run the local Cursor agent on this PR branch to implement the issue + tests.' \
+              '- Update evidence summary.md (remove TODOs).' \
+              '- Add PR label: subagent:done' >&2
+            exit 1
+          fi
+
+          changed="$(git diff --name-only origin/main...HEAD | tr -d '\r' || true)"
+          if [ -z "${changed}" ]; then
+            echo "No changed files detected."
+          fi
+
+          summaries="$(echo "${changed}" | grep -E '^backend/evidence/.+/summary\.md$' || true)"
+          if [ -z "${summaries}" ]; then
+            echo "No evidence summary.md changed in this PR. (Allowed, but recommended.)"
+            exit 0
+          fi
+
+          bad=0
+          while IFS= read -r f; do
+            if rg -n "TODO" "$f" >/dev/null 2>&1; then
+              echo "Evidence file still contains TODO: $f" >&2
+              bad=1
+            fi
+          done <<< "${summaries}"
+
+          if [ "${bad}" -ne 0 ]; then
+            echo "Please fill evidence summary.md (remove TODO) before labeling subagent:done." >&2
+            exit 1
+          fi
+
