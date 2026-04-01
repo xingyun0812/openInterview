@@ -30,7 +30,8 @@ http.interceptors.response.use(
     if (!contentType.includes('application/json')) return resp
 
     const body = resp.data as Result<unknown>
-    if (body && typeof body.code === 'number' && body.code !== 0) {
+    // 后端约定：成功码为 200；历史/部分 mock 可能用 0
+    if (body && typeof body.code === 'number' && body.code !== 0 && body.code !== 200) {
       ElMessage.error(body.msg || '请求失败')
       return Promise.reject(new Error(body.msg || '业务错误'))
     }
